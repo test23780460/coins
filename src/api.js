@@ -13,8 +13,8 @@ export function getApiBase() {
   if (import.meta.env.DEV) {
     return 'http://127.0.0.1:8787';
   }
-  // Placeholder — deploy workflow injects real URL
-  return 'https://skyblock-coin-tracker.test23780460.workers.dev';
+  // Production Worker (also set via VITE_API_BASE_URL in GitHub Actions)
+  return 'https://skyblock-coin-tracker.ptravis022.workers.dev';
 }
 
 export function getToken() {
