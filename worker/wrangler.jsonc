@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "skyblock-coin-tracker",
+  "main": "src/index.js",
+  "compatibility_date": "2025-08-01",
+  "workers_dev": true,
+  "vars": {
+    "GITHUB_OWNER": "test23780460",
+    "GITHUB_DATA_REPO": "skyblock-coin-data",
+    "GITHUB_DATA_PATH": "data/skyblock-coins.json",
+    "ALLOWED_ORIGINS": "https://test23780460.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+  }
+}

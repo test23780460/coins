@@ -1,0 +1,25 @@
+{
+  "name": "skyblock-coin-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "worker:dev": "npm --prefix worker run dev",
+    "worker:deploy": "npm --prefix worker run deploy",
+    "hash-password": "node scripts/hash-password.mjs"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250813.0",
+    "jsdom": "^26.1.0",
+    "vite": "^8.2.0",
+    "vitest": "^3.2.4"
+  }
+}
