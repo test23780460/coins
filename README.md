@@ -14,10 +14,9 @@ Personal Hypixel SkyBlock coin balance tracker. Manually log your total coins ov
 
 ## Live site
 
-After deployment:
-
-- Frontend: `https://test23780460.github.io/coins/`
-- API: Cloudflare Worker URL (set as `VITE_API_BASE_URL`)
+- Frontend: https://test23780460.github.io/coins/
+- API: https://skyblock-coin-tracker.ptravis022.workers.dev
+- Data (private): `skyblock-coin-data` → `data/skyblock-coins.json`
 
 ---
 
