@@ -7,12 +7,11 @@ import {
 import {
   validateEntryInput,
   validateImportPayload,
-  normalizeDatabase,
   newEntryId,
   compactCoins,
   formatCommitDate,
 } from './validation.js';
-import { readDatabase, writeDatabase, writeBackup, GithubError, ConflictError } from './github.js';
+import { loadStore, mutateStore, replaceStore, GithubError, ConflictError } from './store.js';
 
 /** @type {Map<string, { count: number, reset: number }>} */
 const loginAttempts = new Map();
@@ -148,9 +147,8 @@ async function requireAuth(request, env) {
 }
 
 async function handleList(env) {
-  const { data } = await readDatabase(env);
-  const db = normalizeDatabase(data);
-  return json(db);
+  const store = await loadStore(env);
+  return json({ version: store.version, entries: store.entries });
 }
 
 async function handleCreate(request, env) {
@@ -163,18 +161,22 @@ async function handleCreate(request, env) {
   const parsed = validateEntryInput(body);
   if (!parsed.ok) return json({ error: parsed.error, code: 'VALIDATION' }, 400);
 
-  return mutateWithRetry(env, async (db) => {
-    const entry = {
-      id: newEntryId(),
-      coins: parsed.coins,
-      timestamp: parsed.timestamp,
-    };
-    db.entries.push(entry);
+  const next = await mutateStore(env, async (store) => {
+    const entries = [
+      ...store.entries,
+      {
+        id: newEntryId(),
+        coins: parsed.coins,
+        timestamp: parsed.timestamp,
+      },
+    ];
     return {
-      db,
+      entries,
+      version: store.version,
       message: `Add balance: ${compactCoins(parsed.coins)}`,
     };
   });
+  return json(next);
 }
 
 async function handleUpdate(request, env, id) {
@@ -187,36 +189,40 @@ async function handleUpdate(request, env, id) {
   const parsed = validateEntryInput(body);
   if (!parsed.ok) return json({ error: parsed.error, code: 'VALIDATION' }, 400);
 
-  return mutateWithRetry(env, async (db) => {
-    const idx = db.entries.findIndex((e) => e.id === id);
+  const next = await mutateStore(env, async (store) => {
+    const idx = store.entries.findIndex((e) => e.id === id);
     if (idx === -1) {
       throw Object.assign(new Error('Entry not found'), { status: 404, code: 'NOT_FOUND' });
     }
-    db.entries[idx] = {
-      ...db.entries[idx],
-      coins: parsed.coins,
-      timestamp: parsed.timestamp,
-    };
+    const entries = store.entries.map((e, i) =>
+      i === idx
+        ? { ...e, coins: parsed.coins, timestamp: parsed.timestamp }
+        : e
+    );
     return {
-      db,
+      entries,
+      version: store.version,
       message: `Edit balance entry: ${formatCommitDate(parsed.timestamp)}`,
     };
   });
+  return json(next);
 }
 
 async function handleDelete(env, id) {
-  return mutateWithRetry(env, async (db) => {
-    const idx = db.entries.findIndex((e) => e.id === id);
+  const next = await mutateStore(env, async (store) => {
+    const idx = store.entries.findIndex((e) => e.id === id);
     if (idx === -1) {
       throw Object.assign(new Error('Entry not found'), { status: 404, code: 'NOT_FOUND' });
     }
-    const removed = db.entries[idx];
-    db.entries.splice(idx, 1);
+    const removed = store.entries[idx];
+    const entries = store.entries.filter((e) => e.id !== id);
     return {
-      db,
+      entries,
+      version: store.version,
       message: `Delete balance entry: ${formatCommitDate(removed.timestamp)}`,
     };
   });
+  return json(next);
 }
 
 async function handleImport(request, env) {
@@ -229,27 +235,13 @@ async function handleImport(request, env) {
   const parsed = validateImportPayload(body);
   if (!parsed.ok) return json({ error: parsed.error, code: 'VALIDATION' }, 400);
 
-  const { data, sha } = await readDatabase(env);
-  const current = normalizeDatabase(data);
-
-  await writeBackup(
-    env,
-    current,
-    `Backup before import (${current.entries.length} entries)`
-  );
-
-  const next = {
-    version: parsed.version,
-    entries: parsed.entries,
-  };
-
   try {
-    await writeDatabase(
+    const next = await replaceStore(
       env,
-      next,
-      sha,
+      { version: parsed.version, entries: parsed.entries },
       `Import backup: ${parsed.entries.length} entries`
     );
+    return json(next);
   } catch (err) {
     if (err instanceof ConflictError) {
       return json(
@@ -259,31 +251,6 @@ async function handleImport(request, env) {
     }
     throw err;
   }
-
-  return json(next);
-}
-
-/**
- * Read → mutate → write with one conflict retry.
- * @param {any} env
- * @param {(db: {version:number, entries:any[]}) => Promise<{db:any, message:string}>} mutator
- */
-async function mutateWithRetry(env, mutator) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const { data, sha } = await readDatabase(env);
-    const db = normalizeDatabase(data);
-    const { db: next, message } = await mutator(structuredClone(db));
-    try {
-      await writeDatabase(env, next, sha, message);
-      return json(next);
-    } catch (err) {
-      if (err instanceof ConflictError && attempt === 0) {
-        continue;
-      }
-      throw err;
-    }
-  }
-  return json({ error: 'Could not save after conflict', code: 'CONFLICT' }, 409);
 }
 
 function errorResponse(err) {

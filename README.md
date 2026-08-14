@@ -8,7 +8,7 @@ Personal Hypixel SkyBlock coin balance tracker. Manually log your total coins ov
 | --- | --- |
 | **GitHub Pages** (`coins`) | Public frontend only (login UI + dashboard shell). No coin history. |
 | **Cloudflare Worker** | Auth, validation, sessions, GitHub API access. |
-| **Private repo** (`skyblock-coin-data`) | Stores `data/skyblock-coins.json`. Never public. |
+| **Private repo** (`skyblock-coin-data`) | Stores sharded JSON history (`data/manifest.json` + `data/shards/`). Never public. |
 
 ---
 
@@ -16,7 +16,8 @@ Personal Hypixel SkyBlock coin balance tracker. Manually log your total coins ov
 
 - Frontend: https://test23780460.github.io/coins/
 - API: https://skyblock-coin-tracker.ptravis022.workers.dev
-- Data (private): `skyblock-coin-data` → `data/skyblock-coins.json`
+- Data (private): `skyblock-coin-data` → sharded under `data/shards/` (+ `data/manifest.json`)
+
 
 ---
 
@@ -104,20 +105,22 @@ Plain vars (in `worker/wrangler.jsonc`):
 
 Private repo: `skyblock-coin-data`
 
+Long-term storage uses **automatic file sharding** so no single file hits GitHub’s ~1 MB Contents API limit (or the broader Git file limits).
+
 ```text
-data/skyblock-coins.json
+data/manifest.json              # index of all shards + active write target
+data/shards/part-0001.json      # sealed / active history chunks
+data/shards/part-0002.json
+data/skyblock-coins.json        # legacy single file (kept as backup after migration)
+data/backups/                   # import backups
 ```
 
-Initial shape:
+- New balances append to the **active** shard.
+- When that shard approaches ~700 KB, the Worker starts a new `part-XXXX.json`.
+- The site/API always loads **all** shards and merges them — charts, history, exports, and stats still use your full history.
+- Existing single-file data migrates automatically on the next save.
 
-```json
-{
-  "version": 1,
-  "entries": []
-}
-```
-
-Every create / edit / delete / import creates a Git commit in that repo (built-in history backup). Imports also write a file under `data/backups/`.
+Every create / edit / delete / import still creates Git commits (built-in history backup).
 
 ---
 
