@@ -27,6 +27,14 @@ describe('validateEntryInput', () => {
   it('rejects bad timestamp', () => {
     expect(validateEntryInput({ coins: 1, timestamp: 'nope' }).ok).toBe(false);
   });
+  it('accepts optional notes', () => {
+    const r = validateEntryInput({ coins: 10, note: '  sold weapon  ' });
+    expect(r.ok).toBe(true);
+    expect(r.note).toBe('sold weapon');
+  });
+  it('rejects oversized notes', () => {
+    expect(validateEntryInput({ coins: 1, note: 'x'.repeat(501) }).ok).toBe(false);
+  });
 });
 
 describe('validateImportPayload / normalizeDatabase', () => {

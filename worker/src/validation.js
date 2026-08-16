@@ -3,10 +3,33 @@
  */
 
 const MAX_ENTRIES = 50000;
+export const MAX_NOTE_LENGTH = 500;
+
+/**
+ * Optional note explaining why balance changed.
+ * @param {unknown} value
+ * @returns {{ ok: true, note: string|undefined } | { ok: false, error: string }}
+ */
+export function validateNote(value) {
+  if (value == null || value === '') {
+    return { ok: true, note: undefined };
+  }
+  if (typeof value !== 'string') {
+    return { ok: false, error: 'Note must be text' };
+  }
+  const note = value.trim().replace(/\s+/g, ' ');
+  if (!note) {
+    return { ok: true, note: undefined };
+  }
+  if (note.length > MAX_NOTE_LENGTH) {
+    return { ok: false, error: `Note must be ${MAX_NOTE_LENGTH} characters or fewer` };
+  }
+  return { ok: true, note };
+}
 
 /**
  * @param {unknown} body
- * @returns {{ ok: true, coins: number, timestamp: string } | { ok: false, error: string }}
+ * @returns {{ ok: true, coins: number, timestamp: string, note?: string } | { ok: false, error: string }}
  */
 export function validateEntryInput(body) {
   if (!body || typeof body !== 'object') {
@@ -35,11 +58,16 @@ export function validateEntryInput(body) {
     return { ok: false, error: 'Timestamp is too far in the past' };
   }
 
-  return {
+  const noteResult = validateNote(body.note);
+  if (!noteResult.ok) return noteResult;
+
+  const result = {
     ok: true,
     coins: coinsResult.coins,
     timestamp: new Date(ms).toISOString(),
   };
+  if (noteResult.note) result.note = noteResult.note;
+  return result;
 }
 
 /**
@@ -95,11 +123,17 @@ export function validateImportPayload(body) {
       typeof e.id === 'string' && e.id.length > 0 && e.id.length < 80
         ? e.id
         : crypto.randomUUID();
-    entries.push({
+    const noteResult = validateNote(e?.note);
+    if (!noteResult.ok) {
+      return { ok: false, error: `Entry ${i}: ${noteResult.error}` };
+    }
+    const entry = {
       id,
       coins: coinsResult.coins,
       timestamp: new Date(e.timestamp).toISOString(),
-    });
+    };
+    if (noteResult.note) entry.note = noteResult.note;
+    entries.push(entry);
   }
 
   return {
@@ -125,11 +159,14 @@ export function normalizeDatabase(data) {
     const coins = Number(e?.coins);
     if (!Number.isFinite(coins) || coins < 0 || !Number.isSafeInteger(coins)) continue;
     if (typeof e?.timestamp !== 'string' || Number.isNaN(Date.parse(e.timestamp))) continue;
-    entries.push({
+    const noteResult = validateNote(e?.note);
+    const entry = {
       id: typeof e.id === 'string' && e.id ? e.id : crypto.randomUUID(),
       coins,
       timestamp: new Date(e.timestamp).toISOString(),
-    });
+    };
+    if (noteResult.ok && noteResult.note) entry.note = noteResult.note;
+    entries.push(entry);
   }
   return {
     version: Number(data.version) > 0 ? Number(data.version) : 1,

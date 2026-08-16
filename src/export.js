@@ -14,6 +14,7 @@ export function toCsv(entries) {
     'Total Coins',
     'Gain/Loss',
     'Percentage Change',
+    'Note',
   ];
   const lines = [header.join(',')];
   for (const e of rows) {
@@ -29,6 +30,7 @@ export function toCsv(entries) {
         String(e.coins),
         delta,
         pct,
+        csvEscape(e.note || ''),
       ].join(',')
     );
   }
@@ -85,7 +87,10 @@ export function validateImport(raw) {
       id: typeof id === 'string' && id ? id : undefined,
       coins,
       timestamp: new Date(ts).toISOString(),
-      note: typeof e?.note === 'string' ? e.note : undefined,
+      note:
+        typeof e?.note === 'string' && e.note.trim()
+          ? e.note.trim().slice(0, 500)
+          : undefined,
     });
   }
 

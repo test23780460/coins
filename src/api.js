@@ -104,17 +104,17 @@ export async function fetchEntries() {
   return api('/api/entries');
 }
 
-export async function createEntry({ coins, timestamp }) {
+export async function createEntry({ coins, timestamp, note }) {
   return api('/api/entries', {
     method: 'POST',
-    json: { coins, timestamp },
+    json: { coins, timestamp, note },
   });
 }
 
-export async function updateEntry(id, { coins, timestamp }) {
+export async function updateEntry(id, { coins, timestamp, note }) {
   return api(`/api/entries/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    json: { coins, timestamp },
+    json: { coins, timestamp, note },
   });
 }
 

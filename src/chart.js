@@ -96,6 +96,9 @@ export function renderChart(canvas, entries, range = 'ALL') {
               if (full.delta != null) {
                 lines.push(`Change: ${full.delta >= 0 ? '+' : ''}${formatExact(full.delta)}`);
               }
+              if (typeof e.note === 'string' && e.note.trim()) {
+                lines.push(`Note: ${e.note.trim()}`);
+              }
               return lines;
             },
           },

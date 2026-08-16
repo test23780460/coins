@@ -168,6 +168,7 @@ async function handleCreate(request, env) {
         id: newEntryId(),
         coins: parsed.coins,
         timestamp: parsed.timestamp,
+        ...(parsed.note ? { note: parsed.note } : {}),
       },
     ];
     return {
@@ -194,11 +195,16 @@ async function handleUpdate(request, env, id) {
     if (idx === -1) {
       throw Object.assign(new Error('Entry not found'), { status: 404, code: 'NOT_FOUND' });
     }
-    const entries = store.entries.map((e, i) =>
-      i === idx
-        ? { ...e, coins: parsed.coins, timestamp: parsed.timestamp }
-        : e
-    );
+    const entries = store.entries.map((e, i) => {
+      if (i !== idx) return e;
+      const updated = {
+        id: e.id,
+        coins: parsed.coins,
+        timestamp: parsed.timestamp,
+      };
+      if (parsed.note) updated.note = parsed.note;
+      return updated;
+    });
     return {
       entries,
       version: store.version,

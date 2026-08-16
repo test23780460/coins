@@ -57,6 +57,8 @@ export function mountDashboard(root, opts) {
           <div>
             <input class="balance-input" id="balance-input" type="text" inputmode="text" autocomplete="off" placeholder="e.g. 1.25b" aria-label="Current Coin Balance" />
             <div class="parse-preview" id="parse-preview"></div>
+            <label class="note-label" for="note-input">Note <span>(optional)</span></label>
+            <textarea class="note-input" id="note-input" rows="2" maxlength="500" placeholder="Why did it go up or down? e.g. sold Hyperion, bazaar flip, died in dungeon…" aria-label="Balance change note"></textarea>
           </div>
           <button type="button" class="btn btn-primary save-btn" id="btn-save">Save Balance</button>
         </div>
@@ -88,6 +90,7 @@ export function mountDashboard(root, opts) {
     stats: root.querySelector('#stats'),
     history: root.querySelector('#history'),
     input: root.querySelector('#balance-input'),
+    note: root.querySelector('#note-input'),
     preview: root.querySelector('#parse-preview'),
     save: root.querySelector('#btn-save'),
     chart: root.querySelector('#coin-chart'),
@@ -210,6 +213,7 @@ export function mountDashboard(root, opts) {
                   e.delta == null ? '—' : formatDelta(e.delta);
                 const pct =
                   e.percent == null ? '—' : formatPercent(e.percent);
+                const note = typeof e.note === 'string' && e.note.trim() ? e.note.trim() : '';
                 return `<tr data-id="${escapeAttr(e.id)}">
                   <td>${escapeHtml(ny.dateShort)}</td>
                   <td>${escapeHtml(ny.timeShort)}</td>
@@ -222,7 +226,14 @@ export function mountDashboard(root, opts) {
                       <button type="button" class="btn btn-danger" data-delete="${escapeAttr(e.id)}">Delete</button>
                     </div>
                   </td>
-                </tr>`;
+                </tr>
+                ${
+                  note
+                    ? `<tr class="history-note-row" data-note-for="${escapeAttr(e.id)}">
+                        <td colspan="6"><div class="entry-note">${escapeHtml(note)}</div></td>
+                      </tr>`
+                    : ''
+                }`;
               })
               .join('')}
           </tbody>
@@ -261,13 +272,16 @@ export function mountDashboard(root, opts) {
     }
     setBusy(true);
     try {
+      const note = els.note.value.trim();
       const data = await createEntry({
         coins: parsed.value,
         timestamp: new Date().toISOString(),
+        note: note || undefined,
       });
       entries = data.entries || [];
       version = data.version ?? version;
       els.input.value = '';
+      els.note.value = '';
       updatePreview();
       refreshAll();
       toast('Balance saved successfully', 'success');
@@ -331,6 +345,10 @@ export function mountDashboard(root, opts) {
           <label for="edit-time">Timestamp (local)</label>
           <input id="edit-time" type="datetime-local" class="balance-input" value="${escapeAttr(localValue)}" />
         </div>
+        <div class="field">
+          <label for="edit-note">Note</label>
+          <textarea id="edit-note" class="note-input" rows="3" maxlength="500" placeholder="Why did it change?">${escapeHtml(entry.note || '')}</textarea>
+        </div>
         <p style="font-size:0.85rem;color:var(--text-dim);margin:0">Originally ${escapeHtml(ny.dateLong)} · ${escapeHtml(ny.timeShort)} ET</p>
       `,
       onConfirm: async (backdrop) => {
@@ -340,7 +358,12 @@ export function mountDashboard(root, opts) {
         const dt = backdrop.querySelector('#edit-time').value;
         if (!dt) throw Object.assign(new Error('Timestamp required'), { code: 'VALIDATION' });
         const iso = new Date(dt).toISOString();
-        const data = await updateEntry(id, { coins: parsed.value, timestamp: iso });
+        const note = backdrop.querySelector('#edit-note').value.trim();
+        const data = await updateEntry(id, {
+          coins: parsed.value,
+          timestamp: iso,
+          note: note || undefined,
+        });
         entries = data.entries || [];
         version = data.version ?? version;
         refreshAll();

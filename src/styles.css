@@ -366,10 +366,43 @@ a {
   font-weight: 600;
 }
 
+.note-label {
+  display: block;
+  margin-top: 14px;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.note-label span {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.note-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  outline: none;
+  line-height: 1.4;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.note-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .save-btn {
   min-width: 150px;
   min-height: 54px;
   font-size: 1rem;
+  align-self: start;
 }
 
 /* ---------- Chart ---------- */
@@ -447,6 +480,23 @@ table.history td {
 
 table.history tr:hover td {
   background: rgba(255, 255, 255, 0.015);
+}
+
+.history-note-row td {
+  padding: 0 10px 14px !important;
+  border-bottom: 1px solid var(--border);
+  background: transparent !important;
+}
+
+.entry-note {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent-border);
+  background: rgba(232, 184, 74, 0.05);
+  border-radius: 0 8px 8px 0;
+  max-width: 72ch;
 }
 
 .mono {
