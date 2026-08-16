@@ -499,6 +499,67 @@ table.history tr:hover td {
   max-width: 72ch;
 }
 
+.history-date-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.auto-status-panel {
+  padding: 16px 18px;
+}
+
+.auto-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.auto-status-value {
+  font-size: 0.98rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.auto-status-sub {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.auto-status-error {
+  margin: 12px 0 0;
+  color: var(--negative);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .auto-status-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .auto-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .mono {
   font-family: var(--mono);
 }

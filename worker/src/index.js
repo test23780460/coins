@@ -12,6 +12,16 @@ import {
   formatCommitDate,
 } from './validation.js';
 import { loadStore, mutateStore, replaceStore, GithubError, ConflictError } from './store.js';
+import {
+  runScheduledAutoLog,
+  recordManualActivity,
+  suppressAutoAfterDelete,
+  loadAutomationState,
+  buildAutomationStatus,
+  isAutoSource,
+  SOURCE_MANUAL,
+} from './automation.js';
+import { getAutoConfig } from './coins-provider.js';
 
 /** @type {Map<string, { count: number, reset: number }>} */
 const loginAttempts = new Map();
@@ -40,15 +50,28 @@ export default {
       const path = url.pathname.replace(/\/$/, '') || '/';
 
       if (path === '/api/health' && request.method === 'GET') {
-        return json({ ok: true, service: 'skyblock-coin-tracker' }, 200, cors);
+        const cfg = getAutoConfig(env);
+        return json(
+          {
+            ok: true,
+            service: 'skyblock-coin-tracker',
+            automation: {
+              enabled: cfg.enabled,
+              player: cfg.player,
+              profile: cfg.profile,
+              hasHypixelKey: Boolean(env.HYPIXEL_API_KEY),
+              hasSkyCryptToken: Boolean(env.SKYCRYPT_API_TOKEN),
+            },
+          },
+          200,
+          cors
+        );
       }
 
       if (path === '/api/login' && request.method === 'POST') {
         return withCors(await handleLogin(request, env), cors);
       }
 
-      // All routes below require allowed origin for browser calls
-      // (non-browser tools may omit Origin)
       if (origin && !isOriginAllowed(origin, env)) {
         return json({ error: 'Origin not allowed' }, 403, cors);
       }
@@ -83,10 +106,33 @@ export default {
         return withCors(await handleImport(request, env), cors);
       }
 
+      if (path === '/api/automation/status' && request.method === 'GET') {
+        await requireAuth(request, env);
+        return withCors(await handleAutomationStatus(env), cors);
+      }
+
       return json({ error: 'Not found' }, 404, cors);
     } catch (err) {
       return withCors(errorResponse(err), cors);
     }
+  },
+
+  /**
+   * Cloudflare Cron Trigger — check 24h inactivity; create at most one auto entry.
+   * @param {ScheduledController} controller
+   * @param {any} env
+   * @param {ExecutionContext} ctx
+   */
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(
+      runScheduledAutoLog(env)
+        .then((result) => {
+          console.log('auto-log result', JSON.stringify(result));
+        })
+        .catch((err) => {
+          console.error('auto-log crashed', err);
+        })
+    );
   },
 };
 
@@ -168,6 +214,7 @@ async function handleCreate(request, env) {
         id: newEntryId(),
         coins: parsed.coins,
         timestamp: parsed.timestamp,
+        source: SOURCE_MANUAL,
         ...(parsed.note ? { note: parsed.note } : {}),
       },
     ];
@@ -177,6 +224,8 @@ async function handleCreate(request, env) {
       message: `Add balance: ${compactCoins(parsed.coins)}`,
     };
   });
+
+  await recordManualActivity(env, parsed.timestamp);
   return json(next);
 }
 
@@ -190,37 +239,53 @@ async function handleUpdate(request, env, id) {
   const parsed = validateEntryInput(body);
   if (!parsed.ok) return json({ error: parsed.error, code: 'VALIDATION' }, 400);
 
+  let becameManual = false;
   const next = await mutateStore(env, async (store) => {
     const idx = store.entries.findIndex((e) => e.id === id);
     if (idx === -1) {
       throw Object.assign(new Error('Entry not found'), { status: 404, code: 'NOT_FOUND' });
     }
-    const entries = store.entries.map((e, i) => {
-      if (i !== idx) return e;
-      const updated = {
-        id: e.id,
-        coins: parsed.coins,
-        timestamp: parsed.timestamp,
-      };
-      if (parsed.note) updated.note = parsed.note;
-      return updated;
-    });
+    const prev = store.entries[idx];
+    const updated = {
+      id: prev.id,
+      coins: parsed.coins,
+      timestamp: parsed.timestamp,
+    };
+    if (parsed.note) updated.note = parsed.note;
+    // Preserve auto source metadata when editing an automatic entry
+    if (isAutoSource(prev)) {
+      updated.source = prev.source;
+      if (prev.meta) updated.meta = prev.meta;
+    } else {
+      updated.source = SOURCE_MANUAL;
+      becameManual = true;
+    }
+    const entries = store.entries.map((e, i) => (i === idx ? updated : e));
     return {
       entries,
       version: store.version,
       message: `Edit balance entry: ${formatCommitDate(parsed.timestamp)}`,
     };
   });
+
+  if (becameManual || !isAutoSource(next.entries.find((e) => e.id === id))) {
+    // Editing a manual entry (or timestamp) resets inactivity via manual activity stamp
+    const edited = next.entries.find((e) => e.id === id);
+    if (edited && !isAutoSource(edited)) {
+      await recordManualActivity(env, edited.timestamp);
+    }
+  }
   return json(next);
 }
 
 async function handleDelete(env, id) {
+  let removed = null;
   const next = await mutateStore(env, async (store) => {
     const idx = store.entries.findIndex((e) => e.id === id);
     if (idx === -1) {
       throw Object.assign(new Error('Entry not found'), { status: 404, code: 'NOT_FOUND' });
     }
-    const removed = store.entries[idx];
+    removed = store.entries[idx];
     const entries = store.entries.filter((e) => e.id !== id);
     return {
       entries,
@@ -228,6 +293,10 @@ async function handleDelete(env, id) {
       message: `Delete balance entry: ${formatCommitDate(removed.timestamp)}`,
     };
   });
+
+  if (removed && isAutoSource(removed)) {
+    await suppressAutoAfterDelete(env);
+  }
   return json(next);
 }
 
@@ -257,6 +326,12 @@ async function handleImport(request, env) {
     }
     throw err;
   }
+}
+
+async function handleAutomationStatus(env) {
+  const store = await loadStore(env);
+  const { data } = await loadAutomationState(env);
+  return json(buildAutomationStatus(env, store.entries, data));
 }
 
 function errorResponse(err) {

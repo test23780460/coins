@@ -4,10 +4,20 @@
   "main": "src/index.js",
   "compatibility_date": "2025-08-01",
   "workers_dev": true,
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
   "vars": {
     "GITHUB_OWNER": "test23780460",
     "GITHUB_DATA_REPO": "skyblock-coin-data",
     "GITHUB_DATA_PATH": "data/skyblock-coins.json",
-    "ALLOWED_ORIGINS": "https://test23780460.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+    "ALLOWED_ORIGINS": "https://test23780460.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173",
+    "AUTO_LOG_ENABLED": "true",
+    "SKYCRYPT_PLAYER": "justiwantdreams",
+    "SKYCRYPT_PROFILE": "Raspberry",
+    "AUTO_LOG_INACTIVITY_HOURS": "24",
+    "AUTO_LOG_MIN_INTERVAL_HOURS": "24",
+    "AUTO_LOG_PREFER_SKYCRYPT": "true",
+    "SKYCRYPT_API_BASE": "https://sky.shiiyu.moe"
   }
 }

@@ -6,6 +6,7 @@ import {
   deleteEntry,
   importBackup,
   logout as apiLogout,
+  fetchAutomationStatus,
 } from './api.js';
 import {
   formatCompact,
@@ -17,7 +18,7 @@ import {
 } from './formatting.js';
 import { formatNy, withChanges, computeStats } from './time.js';
 import { renderChart, destroyChart } from './chart.js';
-import { toCsv, toJsonBackup, validateImport, downloadBlob } from './export.js';
+import { toCsv, toJsonBackup, validateImport, downloadBlob, sourceLabel } from './export.js';
 
 /**
  * @param {HTMLElement} root
@@ -64,6 +65,8 @@ export function mountDashboard(root, opts) {
         </div>
       </section>
 
+      <section class="panel auto-status-panel" id="auto-status" hidden></section>
+
       <section class="panel">
         <div class="chart-head">
           <h2 style="margin:0">Coin Progress</h2>
@@ -92,6 +95,7 @@ export function mountDashboard(root, opts) {
     input: root.querySelector('#balance-input'),
     note: root.querySelector('#note-input'),
     preview: root.querySelector('#parse-preview'),
+    autoStatus: root.querySelector('#auto-status'),
     save: root.querySelector('#btn-save'),
     chart: root.querySelector('#coin-chart'),
     rangeTabs: root.querySelector('#range-tabs'),
@@ -214,8 +218,14 @@ export function mountDashboard(root, opts) {
                 const pct =
                   e.percent == null ? '—' : formatPercent(e.percent);
                 const note = typeof e.note === 'string' && e.note.trim() ? e.note.trim() : '';
+                const auto = e.source === 'auto-skycrypt' || e.source === 'auto-hypixel';
                 return `<tr data-id="${escapeAttr(e.id)}">
-                  <td>${escapeHtml(ny.dateShort)}</td>
+                  <td>
+                    <div class="history-date-cell">
+                      <span>${escapeHtml(ny.dateShort)}</span>
+                      ${auto ? `<span class="source-badge" title="${escapeAttr(sourceLabel(e.source))}">SkyCrypt Auto</span>` : ''}
+                    </div>
+                  </td>
                   <td>${escapeHtml(ny.timeShort)}</td>
                   <td class="mono" title="${formatExact(e.coins)}">${formatCompact(e.coins)}</td>
                   <td class="mono tone-${tone}">${delta}</td>
@@ -255,6 +265,83 @@ export function mountDashboard(root, opts) {
     renderStats();
     renderHistory();
     refreshChart();
+    refreshAutoStatus();
+  }
+
+  async function refreshAutoStatus() {
+    if (!els.autoStatus) return;
+    try {
+      const status = await fetchAutomationStatus();
+      els.autoStatus.hidden = false;
+      els.autoStatus.innerHTML = renderAutoStatusHtml(status);
+    } catch (err) {
+      console.error(err);
+      // Keep panel quiet on failure — dashboard still usable
+    }
+  }
+
+  function renderAutoStatusHtml(status) {
+    const enabled = status.enabled ? 'Enabled' : 'Disabled';
+    const lastManual = status.lastManualAt
+      ? relativeLabel(status.lastManualAt)
+      : 'No manual entries yet';
+    const lastAuto = status.lastAutoAt
+      ? `${formatNy(status.lastAutoAt).dateShort} · ${formatNy(status.lastAutoAt).timeShort}`
+      : 'None yet';
+    const next = status.nextEligibleAt
+      ? relativeFutureLabel(status.nextEligibleAt)
+      : status.enabled
+        ? 'Checking hourly'
+        : '—';
+    return `
+      <div class="auto-status-grid">
+        <div>
+          <div class="stat-label">Automatic Logging</div>
+          <div class="auto-status-value">${escapeHtml(enabled)}</div>
+          <div class="auto-status-sub">${escapeHtml(status.player)} / ${escapeHtml(status.profile)}${
+            status.hasHypixelKey === false && status.hasSkyCryptToken === false
+              ? ' · needs HYPIXEL_API_KEY'
+              : ''
+          }</div>
+        </div>
+        <div>
+          <div class="stat-label">Last Manual Entry</div>
+          <div class="auto-status-value">${escapeHtml(lastManual)}</div>
+        </div>
+        <div>
+          <div class="stat-label">Last Automatic Entry</div>
+          <div class="auto-status-value">${escapeHtml(lastAuto)}</div>
+        </div>
+        <div>
+          <div class="stat-label">Next Eligible</div>
+          <div class="auto-status-value">${escapeHtml(next)}</div>
+        </div>
+      </div>
+      ${
+        status.lastError
+          ? `<p class="auto-status-error">Last error: ${escapeHtml(status.lastError)}</p>`
+          : ''
+      }
+    `;
+  }
+
+  function relativeLabel(iso) {
+    const ms = Date.now() - Date.parse(iso);
+    if (!Number.isFinite(ms) || ms < 0) return formatNy(iso).dateShort;
+    const hours = ms / 3600000;
+    if (hours < 1) return `${Math.max(1, Math.round(ms / 60000))} min ago`;
+    if (hours < 48) return `${hours.toFixed(hours < 10 ? 1 : 0)} hours ago`;
+    return `${formatNy(iso).dateShort} · ${formatNy(iso).timeShort}`;
+  }
+
+  function relativeFutureLabel(iso) {
+    const ms = Date.parse(iso) - Date.now();
+    if (!Number.isFinite(ms)) return '—';
+    if (ms <= 0) return 'Now (hourly check)';
+    const hours = ms / 3600000;
+    if (hours < 1) return `In ~${Math.max(1, Math.round(ms / 60000))} min`;
+    if (hours < 48) return `In ~${hours.toFixed(hours < 10 ? 1 : 0)} hours`;
+    return formatNy(iso).dateShort;
   }
 
   async function load() {

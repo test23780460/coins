@@ -41,7 +41,7 @@ describe('filterByRange', () => {
 describe('export', () => {
   it('builds CSV with headers', () => {
     const csv = toCsv(sample);
-    expect(csv.startsWith('Date,Time,Timestamp,Total Coins,Gain/Loss,Percentage Change,Note')).toBe(
+    expect(csv.startsWith('Date,Time,Timestamp,Total Coins,Gain/Loss,Percentage Change,Note,Source')).toBe(
       true
     );
     expect(csv.split('\n').length).toBeGreaterThan(4);

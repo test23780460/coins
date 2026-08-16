@@ -133,6 +133,9 @@ export function validateImportPayload(body) {
       timestamp: new Date(e.timestamp).toISOString(),
     };
     if (noteResult.note) entry.note = noteResult.note;
+    const sourceMeta = sanitizeSourceMeta(e);
+    if (sourceMeta.source) entry.source = sourceMeta.source;
+    if (sourceMeta.meta) entry.meta = sourceMeta.meta;
     entries.push(entry);
   }
 
@@ -166,12 +169,44 @@ export function normalizeDatabase(data) {
       timestamp: new Date(e.timestamp).toISOString(),
     };
     if (noteResult.ok && noteResult.note) entry.note = noteResult.note;
+    const sourceMeta = sanitizeSourceMeta(e);
+    if (sourceMeta.source) entry.source = sourceMeta.source;
+    if (sourceMeta.meta) entry.meta = sourceMeta.meta;
     entries.push(entry);
   }
   return {
     version: Number(data.version) > 0 ? Number(data.version) : 1,
     entries,
   };
+}
+
+/**
+ * Preserve known source metadata; ignore unknown junk.
+ * @param {any} e
+ */
+export function sanitizeSourceMeta(e) {
+  const allowed = new Set(['manual', 'auto-skycrypt', 'auto-hypixel']);
+  const out = {};
+  if (typeof e?.source === 'string' && allowed.has(e.source)) {
+    out.source = e.source;
+  }
+  if (e?.meta && typeof e.meta === 'object' && !Array.isArray(e.meta)) {
+    const meta = {};
+    for (const key of [
+      'profile',
+      'player',
+      'provider',
+      'fetchedAt',
+      'purse',
+      'bank',
+      'personalBank',
+      'lastUpdated',
+    ]) {
+      if (e.meta[key] != null) meta[key] = e.meta[key];
+    }
+    if (Object.keys(meta).length) out.meta = meta;
+  }
+  return out;
 }
 
 export function newEntryId() {

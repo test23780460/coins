@@ -30,6 +30,8 @@ Personal Hypixel SkyBlock coin balance tracker. Manually log your total coins ov
 - History with edit / delete
 - Chart filters: 7D · 30D · 90D · ALL
 - CSV + JSON export, JSON import with server-side backup
+- Optional notes on balance changes
+- **Automatic backup logging** after 24h without a manual entry (Cloudflare Cron)
 - America/New_York display timezone
 - Mobile-friendly dark UI
 
@@ -121,6 +123,80 @@ data/backups/                   # import backups
 - Existing single-file data migrates automatically on the next save.
 
 Every create / edit / delete / import still creates Git commits (built-in history backup).
+
+---
+
+## Automatic logging (24-hour backup)
+
+If you do not manually save a balance for **24 hours**, the Worker automatically records your **Raspberry** liquid coins (purse + bank + personal bank) about once per day until you log manually again.
+
+### How the timer works
+
+- Only **manual** entries reset the inactivity timer.
+- Automatic entries do **not** count as manual activity.
+- After a manual save, the next auto entry is eligible ~24 hours later.
+- While inactive, the Worker records at most **one** automatic balance per 24 hours.
+- Cron runs hourly (`0 * * * *`) but only creates an entry when eligible.
+- Duplicate cron runs are guarded (re-check before commit + min-interval + automation state).
+- Deleting an automatic entry suppresses recreation for 24 hours so cron does not spam replacements.
+
+### Data source
+
+SkyCrypt’s public website loads stats from its backend (`GET /api/stats/{player}/{profile}`), which requires a private `X-API-Token`. That token is not publicly available.
+
+This tracker therefore:
+
+1. Prefers SkyCrypt’s structured API when `SKYCRYPT_API_TOKEN` is configured.
+2. Otherwise uses the **Hypixel SkyBlock API** (SkyCrypt’s upstream) with your `HYPIXEL_API_KEY`.
+
+Configured player/profile (Worker vars):
+
+- `SKYCRYPT_PLAYER=justiwantdreams`
+- `SKYCRYPT_PROFILE=Raspberry`
+
+Balance meaning: **purse + coop bank + personal bank** (not net worth / items).
+
+Failures (timeouts, 429/500, wrong profile, missing bank, malformed JSON) **never** write a balance. The next hourly check retries.
+
+### Enable / disable
+
+```text
+AUTO_LOG_ENABLED=true   # set false in wrangler.jsonc vars to disable
+```
+
+Required secret for automatic logging:
+
+```bash
+cd worker
+npx wrangler secret put HYPIXEL_API_KEY
+```
+
+Get a key at https://developer.hypixel.net/
+
+Optional:
+
+```bash
+npx wrangler secret put SKYCRYPT_API_TOKEN
+```
+
+### Deploy Worker (includes cron)
+
+```bash
+cd worker
+npx wrangler deploy
+```
+
+Confirm triggers show `0 * * * *` in the deploy output.
+
+### Testing automatic logging
+
+```bash
+npm test
+```
+
+Unit tests cover eligibility, duplicate windows, SkyCrypt/Hypixel parsers, and failure cases.
+
+Dashboard shows a compact **Automatic Logging** status panel after login.
 
 ---
 

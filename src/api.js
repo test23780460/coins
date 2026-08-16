@@ -131,6 +131,6 @@ export async function importBackup(payload) {
   });
 }
 
-export async function healthCheck() {
-  return api('/api/health', { auth: false });
+export async function fetchAutomationStatus() {
+  return api('/api/automation/status');
 }

@@ -15,6 +15,7 @@ export function toCsv(entries) {
     'Gain/Loss',
     'Percentage Change',
     'Note',
+    'Source',
   ];
   const lines = [header.join(',')];
   for (const e of rows) {
@@ -31,6 +32,7 @@ export function toCsv(entries) {
         delta,
         pct,
         csvEscape(e.note || ''),
+        csvEscape(sourceLabel(e.source)),
       ].join(',')
     );
   }
@@ -91,6 +93,12 @@ export function validateImport(raw) {
         typeof e?.note === 'string' && e.note.trim()
           ? e.note.trim().slice(0, 500)
           : undefined,
+      source:
+        typeof e?.source === 'string' &&
+        ['manual', 'auto-skycrypt', 'auto-hypixel'].includes(e.source)
+          ? e.source
+          : undefined,
+      meta: e?.meta && typeof e.meta === 'object' ? e.meta : undefined,
     });
   }
 
@@ -121,6 +129,11 @@ function csvEscape(value) {
   const s = String(value ?? '');
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
+}
+
+export function sourceLabel(source) {
+  if (source === 'auto-skycrypt' || source === 'auto-hypixel') return 'SkyCrypt Auto';
+  return 'Manual';
 }
 
 export {
