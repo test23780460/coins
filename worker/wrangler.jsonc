@@ -15,6 +15,7 @@
     "AUTO_LOG_ENABLED": "true",
     "SKYCRYPT_PLAYER": "justiwantdreams",
     "SKYCRYPT_PROFILE": "Raspberry",
+    "SKYCRYPT_PLAYER_UUID": "82f8e698500d46c792ee93cd1ca7ad7a",
     "AUTO_LOG_INACTIVITY_HOURS": "24",
     "AUTO_LOG_MIN_INTERVAL_HOURS": "24",
     "AUTO_LOG_PREFER_SKYCRYPT": "true",

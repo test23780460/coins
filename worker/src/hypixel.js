@@ -30,7 +30,12 @@ export async function fetchHypixelLiquidCoins(env, opts) {
     throw new HypixelError('HYPIXEL_API_KEY is not configured', 'CONFIG');
   }
 
-  const uuid = (opts.uuid || (await resolveUuid(player))).replace(/-/g, '').toLowerCase();
+  const uuid = (
+    opts.uuid ||
+    (await resolveUuid(player, env))
+  )
+    .replace(/-/g, '')
+    .toLowerCase();
 
   let res;
   try {
@@ -79,34 +84,65 @@ export async function fetchHypixelLiquidCoins(env, opts) {
 
 /**
  * @param {string} username
+ * @param {any} [env]
  */
-export async function resolveUuid(username) {
-  let res;
-  try {
-    res = await fetch(
-      `https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(username)}`,
-      {
-        headers: { Accept: 'application/json', 'User-Agent': 'skyblock-coin-tracker-worker/1.0' },
+export async function resolveUuid(username, env = {}) {
+  const configured = String(env.SKYCRYPT_PLAYER_UUID || '').replace(/-/g, '').trim();
+  if (/^[a-f0-9]{32}$/i.test(configured)) {
+    return configured.toLowerCase();
+  }
+
+  const errors = [];
+  const providers = [
+    {
+      name: 'ashcon',
+      url: `https://api.ashcon.app/mojang/v2/user/${encodeURIComponent(username)}`,
+      pick: (data) => data?.uuid,
+    },
+    {
+      name: 'playerdb',
+      url: `https://playerdb.co/api/player/minecraft/${encodeURIComponent(username)}`,
+      pick: (data) => data?.data?.player?.id || data?.data?.player?.raw_id,
+    },
+    {
+      name: 'mojang',
+      url: `https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(username)}`,
+      pick: (data) => data?.id,
+    },
+  ];
+
+  for (const provider of providers) {
+    try {
+      const res = await fetch(provider.url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'skyblock-coin-tracker-worker/1.0',
+        },
         signal: AbortSignal.timeout(10000),
+      });
+      if (res.status === 404 || res.status === 204) {
+        errors.push(`${provider.name}: not found`);
+        continue;
       }
-    );
-  } catch (err) {
-    throw new HypixelError(`UUID lookup failed: ${err.message || 'network error'}`, 'NETWORK');
+      if (!res.ok) {
+        errors.push(`${provider.name}: HTTP ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const id = String(provider.pick(data) || '')
+        .replace(/-/g, '')
+        .toLowerCase();
+      if (/^[a-f0-9]{32}$/.test(id)) return id;
+      errors.push(`${provider.name}: malformed id`);
+    } catch (err) {
+      errors.push(`${provider.name}: ${err.message || 'network error'}`);
+    }
   }
-  if (res.status === 404 || res.status === 204) {
-    throw new HypixelError(`Player not found: ${username}`, 'NOT_FOUND');
-  }
-  if (!res.ok) {
-    throw new HypixelError(`UUID lookup HTTP ${res.status}`, 'HTTP');
-  }
-  const data = await res.json();
-  if (!data?.id) {
-    throw new HypixelError('UUID lookup returned no id', 'MALFORMED');
-  }
-  if (data.name && String(data.name).toLowerCase() !== String(username).toLowerCase()) {
-    // Mojang returns canonical casing — still OK if case differs
-  }
-  return String(data.id);
+
+  throw new HypixelError(
+    `UUID lookup failed for ${username} (${errors.join('; ')})`,
+    'NOT_FOUND'
+  );
 }
 
 /**
