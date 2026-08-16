@@ -21,7 +21,7 @@ import {
   isAutoSource,
   SOURCE_MANUAL,
 } from './automation.js';
-import { getAutoConfig } from './coins-provider.js';
+import { getAutoConfig, fetchLiquidCoins } from './coins-provider.js';
 
 /** @type {Map<string, { count: number, reset: number }>} */
 const loginAttempts = new Map();
@@ -109,6 +109,11 @@ export default {
       if (path === '/api/automation/status' && request.method === 'GET') {
         await requireAuth(request, env);
         return withCors(await handleAutomationStatus(env), cors);
+      }
+
+      if (path === '/api/automation/probe' && request.method === 'POST') {
+        await requireAuth(request, env);
+        return withCors(await handleAutomationProbe(env), cors);
       }
 
       return json({ error: 'Not found' }, 404, cors);
@@ -332,6 +337,34 @@ async function handleAutomationStatus(env) {
   const store = await loadStore(env);
   const { data } = await loadAutomationState(env);
   return json(buildAutomationStatus(env, store.entries, data));
+}
+
+async function handleAutomationProbe(env) {
+  // Read-only: fetch current liquid coins without writing history.
+  try {
+    const fetched = await fetchLiquidCoins(env);
+    return json({
+      ok: true,
+      provider: fetched.provider,
+      player: fetched.player,
+      profile: fetched.profileCuteName || fetched.profile,
+      coins: fetched.coins,
+      purse: fetched.purse,
+      bank: fetched.bank,
+      personalBank: fetched.personalBank,
+      fetchedAt: fetched.fetchedAt,
+    });
+  } catch (err) {
+    return json(
+      {
+        ok: false,
+        error: err.message || 'Probe failed',
+        code: err.code || 'PROBE',
+        details: err.details || undefined,
+      },
+      502
+    );
+  }
 }
 
 function errorResponse(err) {
