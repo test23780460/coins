@@ -7,6 +7,7 @@ import {
   importBackup,
   logout as apiLogout,
   fetchAutomationStatus,
+  runAutomationCheck,
 } from './api.js';
 import {
   formatCompact,
@@ -274,9 +275,62 @@ export function mountDashboard(root, opts) {
       const status = await fetchAutomationStatus();
       els.autoStatus.hidden = false;
       els.autoStatus.innerHTML = renderAutoStatusHtml(status);
+      bindAutoCheckButton();
     } catch (err) {
       console.error(err);
       // Keep panel quiet on failure — dashboard still usable
+    }
+  }
+
+  function bindAutoCheckButton() {
+    const btn = els.autoStatus.querySelector('#btn-auto-check');
+    if (!btn || btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const prev = btn.textContent;
+      btn.textContent = 'Checking…';
+      try {
+        const result = await runAutomationCheck();
+        if (!result.ok || !result.probe?.ok) {
+          toast(result.probe?.error || result.error || 'Auto check failed', 'error');
+        } else {
+          const coinsText = formatCompact(result.probe.coins);
+          const run = result.run || {};
+          if (run.created) {
+            toast(`Auto entry saved · ${coinsText} coins`, 'success');
+            await load();
+          } else {
+            const reason = friendlyAutoReason(run.reason);
+            toast(`Live balance ${coinsText} · ${reason}`, 'info');
+            await refreshAutoStatus();
+          }
+        }
+      } catch (err) {
+        handleApiError(err);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    });
+  }
+
+  function friendlyAutoReason(reason) {
+    switch (reason) {
+      case 'manual_recent':
+        return 'not due yet (manual entry within 24h)';
+      case 'auto_recent':
+        return 'not due yet (auto entry within 24h)';
+      case 'suppressed_after_delete':
+        return 'suppressed after deleting an auto entry';
+      case 'disabled':
+        return 'automatic logging is disabled';
+      case 'created':
+        return 'entry created';
+      case 'fetch_failed':
+        return 'fetch failed';
+      default:
+        return reason ? String(reason).replace(/_/g, ' ') : 'no entry created';
     }
   }
 
@@ -294,9 +348,16 @@ export function mountDashboard(root, opts) {
         ? 'Checking hourly'
         : '—';
     return `
+      <div class="auto-status-head">
+        <div>
+          <h2 style="margin:0">Automatic Logging</h2>
+          <p class="panel-desc" style="margin:6px 0 0">Hourly backup when you forget to log for 24 hours.</p>
+        </div>
+        <button type="button" class="btn btn-primary" id="btn-auto-check">Run Auto Check</button>
+      </div>
       <div class="auto-status-grid">
         <div>
-          <div class="stat-label">Automatic Logging</div>
+          <div class="stat-label">Status</div>
           <div class="auto-status-value">${escapeHtml(enabled)}</div>
           <div class="auto-status-sub">${escapeHtml(status.player)} / ${escapeHtml(status.profile)}${
             status.hasHypixelKey === false && status.hasSkyCryptToken === false

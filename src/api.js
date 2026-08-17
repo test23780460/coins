@@ -134,3 +134,7 @@ export async function importBackup(payload) {
 export async function fetchAutomationStatus() {
   return api('/api/automation/status');
 }
+
+export async function runAutomationCheck() {
+  return api('/api/automation/run', { method: 'POST' });
+}

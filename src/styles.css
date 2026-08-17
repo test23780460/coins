@@ -524,6 +524,15 @@ table.history tr:hover td {
   padding: 16px 18px;
 }
 
+.auto-status-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
 .auto-status-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

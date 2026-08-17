@@ -24,13 +24,20 @@ export class ProviderError extends Error {
  */
 export function getAutoConfig(env) {
   const enabled = String(env.AUTO_LOG_ENABLED ?? 'true').toLowerCase() !== 'false';
+  const uuid = String(env.SKYCRYPT_PLAYER_UUID || '')
+    .replace(/-/g, '')
+    .trim()
+    .toLowerCase();
   return {
     enabled,
     player: String(env.SKYCRYPT_PLAYER || 'justiwantdreams').trim(),
     profile: String(env.SKYCRYPT_PROFILE || 'Raspberry').trim(),
+    uuid: /^[a-f0-9]{32}$/.test(uuid) ? uuid : null,
     inactivityHours: Number(env.AUTO_LOG_INACTIVITY_HOURS) || 24,
     minIntervalHours: Number(env.AUTO_LOG_MIN_INTERVAL_HOURS) || 24,
-    preferSkyCrypt: String(env.AUTO_LOG_PREFER_SKYCRYPT ?? 'true').toLowerCase() !== 'false',
+    preferSkyCrypt:
+      String(env.AUTO_LOG_PREFER_SKYCRYPT ?? 'true').toLowerCase() !== 'false' &&
+      Boolean(env.SKYCRYPT_API_TOKEN),
   };
 }
 
@@ -40,7 +47,11 @@ export function getAutoConfig(env) {
  */
 export async function fetchLiquidCoins(env) {
   const cfg = getAutoConfig(env);
-  const opts = { player: cfg.player, profile: cfg.profile };
+  const opts = {
+    player: cfg.player,
+    profile: cfg.profile,
+    ...(cfg.uuid ? { uuid: cfg.uuid } : {}),
+  };
   const errors = {};
 
   if (cfg.preferSkyCrypt) {
@@ -48,11 +59,17 @@ export async function fetchLiquidCoins(env) {
       return await fetchSkyCryptLiquidCoins(env, opts);
     } catch (err) {
       errors.skycrypt = err.message || String(err);
-      // Fall through to Hypixel unless it was a wrong player/profile validation
-      if (err instanceof SkyCryptError && (err.code === 'WRONG_PLAYER' || err.code === 'WRONG_PROFILE' || err.code === 'INVALID_BALANCE')) {
+      if (
+        err instanceof SkyCryptError &&
+        (err.code === 'WRONG_PLAYER' ||
+          err.code === 'WRONG_PROFILE' ||
+          err.code === 'INVALID_BALANCE')
+      ) {
         throw err;
       }
     }
+  } else {
+    errors.skycrypt = 'skipped (no SKYCRYPT_API_TOKEN)';
   }
 
   try {

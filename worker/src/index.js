@@ -116,6 +116,11 @@ export default {
         return withCors(await handleAutomationProbe(env), cors);
       }
 
+      if (path === '/api/automation/run' && request.method === 'POST') {
+        await requireAuth(request, env);
+        return withCors(await handleAutomationRun(env), cors);
+      }
+
       return json({ error: 'Not found' }, 404, cors);
     } catch (err) {
       return withCors(errorResponse(err), cors);
@@ -365,6 +370,49 @@ async function handleAutomationProbe(env) {
       502
     );
   }
+}
+
+/**
+ * Manual trigger of the same auto-check the hourly cron uses.
+ * Always probes live coins first so the button can verify Hypixel even when not eligible to write.
+ */
+async function handleAutomationRun(env) {
+  let probe = null;
+  try {
+    const fetched = await fetchLiquidCoins(env);
+    probe = {
+      ok: true,
+      provider: fetched.provider,
+      player: fetched.player,
+      profile: fetched.profileCuteName || fetched.profile,
+      coins: fetched.coins,
+      purse: fetched.purse,
+      bank: fetched.bank,
+      personalBank: fetched.personalBank,
+      fetchedAt: fetched.fetchedAt,
+    };
+  } catch (err) {
+    return json(
+      {
+        ok: false,
+        probe: {
+          ok: false,
+          error: err.message || 'Probe failed',
+          code: err.code || 'PROBE',
+          details: err.details || undefined,
+        },
+        run: null,
+      },
+      502
+    );
+  }
+
+  const run = await runScheduledAutoLog(env);
+  return json({
+    ok: true,
+    probe,
+    run,
+  });
 }
 
 function errorResponse(err) {
