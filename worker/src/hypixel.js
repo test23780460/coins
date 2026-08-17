@@ -30,6 +30,13 @@ export async function fetchHypixelLiquidCoins(env, opts) {
     throw new HypixelError('HYPIXEL_API_KEY is not configured', 'CONFIG');
   }
 
+  const apiKey = String(env.HYPIXEL_API_KEY)
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  if (!apiKey) {
+    throw new HypixelError('HYPIXEL_API_KEY is empty', 'CONFIG');
+  }
+
   const uuid = (
     opts.uuid ||
     (await resolveUuid(player, env))
@@ -44,7 +51,7 @@ export async function fetchHypixelLiquidCoins(env, opts) {
       {
         method: 'GET',
         headers: {
-          'API-Key': env.HYPIXEL_API_KEY,
+          'API-Key': apiKey,
           Accept: 'application/json',
           'User-Agent': 'skyblock-coin-tracker-worker/1.0',
         },
@@ -55,8 +62,25 @@ export async function fetchHypixelLiquidCoins(env, opts) {
     throw new HypixelError(`Hypixel request failed: ${err.message || 'network error'}`, 'NETWORK');
   }
 
+  let bodyText = '';
+  try {
+    bodyText = await res.text();
+  } catch {
+    bodyText = '';
+  }
+
+  let data = null;
+  if (bodyText) {
+    try {
+      data = JSON.parse(bodyText);
+    } catch {
+      data = null;
+    }
+  }
+
   if (res.status === 403 || res.status === 401) {
-    throw new HypixelError('Hypixel API key rejected', 'UNAUTHORIZED');
+    const cause = data?.cause || data?.error || `HTTP ${res.status}`;
+    throw new HypixelError(`Hypixel API key rejected (${cause})`, 'UNAUTHORIZED');
   }
   if (res.status === 429) {
     throw new HypixelError('Hypixel rate limited', 'RATE_LIMIT');
@@ -66,13 +90,6 @@ export async function fetchHypixelLiquidCoins(env, opts) {
   }
   if (!res.ok) {
     throw new HypixelError(`Hypixel HTTP ${res.status}`, 'HTTP');
-  }
-
-  let data;
-  try {
-    data = await res.json();
-  } catch {
-    throw new HypixelError('Hypixel returned invalid JSON', 'MALFORMED');
   }
 
   if (!data || data.success !== true) {
