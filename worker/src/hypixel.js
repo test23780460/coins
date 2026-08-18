@@ -5,6 +5,8 @@
  * Liquid coins = purse + coop bank + personal bank for the configured cute-name profile.
  */
 
+import { analyticsFromHypixelMember } from './profile-analytics.js';
+
 export class HypixelError extends Error {
   /**
    * @param {string} message
@@ -168,6 +170,118 @@ export async function resolveUuid(username, env = {}) {
  * @param {{ player: string, profile: string, uuid: string }} expected
  */
 export function parseHypixelProfilesPayload(data, expected) {
+  const { profile, member, uuid } = resolveHypixelMember(data, expected);
+
+  const purseRaw =
+    member.coin_purse ??
+    member.currencies?.coin_purse ??
+    member.currencies?.coins;
+  if (purseRaw == null) {
+    throw new HypixelError('Missing purse (coin_purse) field', 'MISSING_FIELDS');
+  }
+  const purse = Number(purseRaw);
+  if (!Number.isFinite(purse) || purse < 0) {
+    throw new HypixelError('Invalid purse value', 'INVALID_BALANCE');
+  }
+
+  // Coop bank — absent when Bank API is disabled in SkyBlock settings
+  let bank = 0;
+  let bankApiUnavailable = false;
+  if (profile.banking && typeof profile.banking === 'object' && 'balance' in profile.banking) {
+    bank = Number(profile.banking.balance);
+    if (!Number.isFinite(bank) || bank < 0) {
+      throw new HypixelError('Invalid bank value', 'INVALID_BALANCE');
+    }
+  } else {
+    bankApiUnavailable = true;
+  }
+
+  const personalRaw =
+    member.profile?.bank_account ??
+    member.banking?.balance ??
+    0;
+  const personalBank = Number(personalRaw);
+  if (!Number.isFinite(personalBank) || personalBank < 0) {
+    throw new HypixelError('Invalid personal bank value', 'INVALID_BALANCE');
+  }
+
+  const coins = Math.round(purse + bank + personalBank);
+  if (!Number.isFinite(coins) || coins < 0 || !Number.isSafeInteger(coins)) {
+    throw new HypixelError('Computed balance is invalid', 'INVALID_BALANCE');
+  }
+
+  const fetchedAt = new Date().toISOString();
+  const profileAnalytics = analyticsFromHypixelMember(member, {
+    provider: 'hypixel',
+    player: expected.player,
+    profile: expected.profile,
+    profileId: profile.profile_id || null,
+    fetchedAt,
+  });
+
+  return {
+    provider: 'hypixel',
+    player: expected.player,
+    profile: expected.profile,
+    profileCuteName: profile.cute_name,
+    profileId: profile.profile_id || null,
+    uuid,
+    coins,
+    purse: Math.round(purse),
+    bank: Math.round(bank),
+    personalBank: Math.round(personalBank),
+    bankApiUnavailable,
+    fetchedAt,
+    lastUpdated: null,
+    profileAnalytics,
+  };
+}
+
+/**
+ * Parse coins and analytics independently from one Hypixel profiles payload.
+ * Coin failure does not discard valid analytics (and vice versa).
+ * @param {any} data
+ * @param {{ player: string, profile: string, uuid: string }} expected
+ */
+export function parseHypixelProfileBundle(data, expected) {
+  let profile;
+  let member;
+  let uuid;
+  try {
+    ({ profile, member, uuid } = resolveHypixelMember(data, expected));
+  } catch (err) {
+    return {
+      coins: null,
+      coinsError: err,
+      analytics: null,
+    };
+  }
+
+  const fetchedAt = new Date().toISOString();
+  const analytics = analyticsFromHypixelMember(member, {
+    provider: 'hypixel',
+    player: expected.player,
+    profile: expected.profile,
+    profileId: profile.profile_id || null,
+    fetchedAt,
+  });
+
+  let coins = null;
+  let coinsError = null;
+  try {
+    coins = parseHypixelProfilesPayload(data, expected);
+  } catch (err) {
+    coinsError = err;
+  }
+
+  return { coins, coinsError, analytics, uuid, profileId: profile.profile_id || null };
+}
+
+/**
+ * @param {any} data
+ * @param {{ player: string, profile: string, uuid: string }} expected
+ */
+function resolveHypixelMember(data, expected) {
   const profiles = data?.profiles;
   if (!Array.isArray(profiles) || profiles.length === 0) {
     throw new HypixelError('No SkyBlock profiles returned', 'NOT_FOUND');
@@ -188,7 +302,6 @@ export function parseHypixelProfilesPayload(data, expected) {
 
   const uuid = expected.uuid.replace(/-/g, '').toLowerCase();
   const members = profile.members || {};
-  // Hypixel member keys are undashed lowercase uuids
   const member =
     members[uuid] ||
     members[expected.uuid] ||
@@ -198,53 +311,6 @@ export function parseHypixelProfilesPayload(data, expected) {
     throw new HypixelError('Player member data missing on profile', 'WRONG_PLAYER');
   }
 
-  const purseRaw =
-    member.coin_purse ??
-    member.currencies?.coin_purse ??
-    member.currencies?.coins;
-  if (purseRaw == null) {
-    throw new HypixelError('Missing purse (coin_purse) field', 'MISSING_FIELDS');
-  }
-  const purse = Number(purseRaw);
-  if (!Number.isFinite(purse) || purse < 0) {
-    throw new HypixelError('Invalid purse value', 'INVALID_BALANCE');
-  }
-
-  // Coop bank — must be present to interpret "bank balance"
-  if (!profile.banking || typeof profile.banking !== 'object' || !('balance' in profile.banking)) {
-    throw new HypixelError('Missing bank balance (banking API off or unavailable)', 'MISSING_FIELDS');
-  }
-  const bank = Number(profile.banking.balance);
-  if (!Number.isFinite(bank) || bank < 0) {
-    throw new HypixelError('Invalid bank value', 'INVALID_BALANCE');
-  }
-
-  const personalRaw =
-    member.profile?.bank_account ??
-    member.banking?.balance ??
-    0;
-  const personalBank = Number(personalRaw);
-  if (!Number.isFinite(personalBank) || personalBank < 0) {
-    throw new HypixelError('Invalid personal bank value', 'INVALID_BALANCE');
-  }
-
-  const coins = Math.round(purse + bank + personalBank);
-  if (!Number.isFinite(coins) || coins < 0 || !Number.isSafeInteger(coins)) {
-    throw new HypixelError('Computed balance is invalid', 'INVALID_BALANCE');
-  }
-
-  return {
-    provider: 'hypixel',
-    player: expected.player,
-    profile: expected.profile,
-    profileCuteName: profile.cute_name,
-    profileId: profile.profile_id || null,
-    uuid,
-    coins,
-    purse: Math.round(purse),
-    bank: Math.round(bank),
-    personalBank: Math.round(personalBank),
-    fetchedAt: new Date().toISOString(),
-    lastUpdated: null,
-  };
+  return { profile, member, uuid };
 }
+

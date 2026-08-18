@@ -25,6 +25,7 @@ Chart.register(
 );
 
 let chartInstance = null;
+let profileChartInstances = { netWorth: null, skillXp: null };
 
 /**
  * @param {HTMLCanvasElement} canvas
@@ -142,6 +143,115 @@ export function destroyChart() {
   if (chartInstance) {
     chartInstance.destroy();
     chartInstance = null;
+  }
+}
+
+/**
+ * Secondary profile analytics charts — never mixes into the coin chart.
+ * @param {'netWorth'|'skillXp'} kind
+ * @param {HTMLCanvasElement} canvas
+ * @param {Array} snapshots
+ * @param {'7D'|'30D'|'90D'|'ALL'} range
+ */
+export function renderProfileChart(kind, canvas, snapshots, range = 'ALL') {
+  if (!canvas) return null;
+  const filtered = filterByRange(snapshots || [], range);
+  const chrono = sortChronological(filtered).filter((s) => {
+    if (kind === 'netWorth') return Number.isFinite(s.netWorth);
+    return Number.isFinite(s.totalSkillXp);
+  });
+
+  const labels = chrono.map((e) => {
+    const ny = formatNy(e.timestamp);
+    return `${ny.dateShort}\n${ny.timeShort}`;
+  });
+  const data = chrono.map((e) => (kind === 'netWorth' ? e.netWorth : e.totalSkillXp));
+  const label = kind === 'netWorth' ? 'Estimated Net Worth' : 'Total Skill XP';
+  const color = kind === 'netWorth' ? '#7eb6ff' : '#9ad27a';
+
+  const cfg = {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label,
+          data,
+          borderColor: color,
+          backgroundColor:
+            kind === 'netWorth' ? 'rgba(126, 182, 255, 0.12)' : 'rgba(154, 210, 122, 0.12)',
+          borderWidth: 2,
+          pointRadius: chrono.length > 40 ? 2 : 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: color,
+          pointBorderColor: '#0b1220',
+          pointBorderWidth: 2,
+          tension: 0.25,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(15, 22, 36, 0.95)',
+          titleColor: '#f2f5fa',
+          bodyColor: '#c5cedd',
+          borderColor: 'rgba(232, 184, 74, 0.25)',
+          borderWidth: 1,
+          padding: 10,
+          displayColors: false,
+          callbacks: {
+            label(item) {
+              return `${label}: ${formatExact(item.raw)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: {
+            color: '#8b97ab',
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 5,
+            font: { family: "'DM Sans', sans-serif", size: 10 },
+          },
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          ticks: {
+            color: '#8b97ab',
+            callback: (v) => formatCompact(v),
+            font: { family: "'JetBrains Mono', monospace", size: 10 },
+          },
+        },
+      },
+    },
+  };
+
+  const existing = profileChartInstances[kind];
+  if (existing) {
+    existing.data = cfg.data;
+    existing.options = cfg.options;
+    existing.update();
+    return existing;
+  }
+  profileChartInstances[kind] = new Chart(canvas, cfg);
+  return profileChartInstances[kind];
+}
+
+export function destroyProfileCharts() {
+  for (const key of Object.keys(profileChartInstances)) {
+    if (profileChartInstances[key]) {
+      profileChartInstances[key].destroy();
+      profileChartInstances[key] = null;
+    }
   }
 }
 

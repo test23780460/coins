@@ -6,6 +6,7 @@ import { readJsonFile, writeJsonFile, ConflictError } from './github.js';
 import { loadStore, mutateStore } from './store.js';
 import { newEntryId, compactCoins } from './validation.js';
 import { fetchLiquidCoins, getAutoConfig, ProviderError } from './coins-provider.js';
+import { maybeSaveProfileSnapshot } from './profile-snapshots.js';
 
 export const AUTOMATION_STATE_PATH = 'data/automation-state.json';
 export const SOURCE_MANUAL = 'manual';
@@ -14,6 +15,8 @@ export const SOURCE_AUTO_HYPIXEL = 'auto-hypixel';
 
 const AUTO_NOTE =
   'Automatically logged from SkyCrypt/Hypixel after 24 hours without a manual entry.';
+
+const MANUAL_CHECK_NOTE = 'Logged from Run Auto Check (Hypixel/SkyCrypt).';
 
 /**
  * @param {any} entry
@@ -310,10 +313,12 @@ export async function suppressAutoAfterDelete(env) {
 }
 
 /**
- * Hourly cron entry point — may no-op.
+ * Hourly cron entry point — may no-op unless `force` is set (manual Run Auto Check).
  * @param {any} env
+ * @param {{ force?: boolean, fetched?: any }} [options]
  */
-export async function runScheduledAutoLog(env) {
+export async function runScheduledAutoLog(env, options = {}) {
+  const force = Boolean(options.force);
   const cfg = getAutoConfig(env);
   const result = {
     ranAt: new Date().toISOString(),
@@ -322,7 +327,7 @@ export async function runScheduledAutoLog(env) {
     reason: null,
   };
 
-  if (!cfg.enabled) {
+  if (!cfg.enabled && !force) {
     result.reason = 'disabled';
     return result;
   }
@@ -335,82 +340,94 @@ export async function runScheduledAutoLog(env) {
       env,
       stateWrap.data,
       stateWrap.sha,
-      'Automation: hourly check'
+      force ? 'Automation: manual check' : 'Automation: hourly check'
     );
     stateWrap = await loadAutomationState(env);
   } catch (err) {
     console.error('Failed to stamp automation attempt', err);
   }
 
-  // Load history and evaluate
+  // Fetch profile once — used for coins (if eligible) and profile analytics
+  let fetched = options.fetched || null;
+  if (!fetched) {
+    try {
+      fetched = await fetchLiquidCoins(env);
+    } catch (err) {
+      const message = err.message || 'fetch failed';
+      console.error('Auto-log fetch failed', err);
+      await stampAutomationError(env, message, {
+        skycrypt: err.details?.skycrypt,
+        hypixel: err.details?.hypixel,
+        code: err.code,
+      });
+      result.reason = 'fetch_failed';
+      result.error = message;
+      return result;
+    }
+  }
+
+  // Profile analytics — independent of coin eligibility / inactivity timer
+  result.profileSnapshot = await maybeSaveProfileSnapshot(env, fetched.profileAnalytics, {
+    triggeredBy: force ? 'manual-check' : 'cron',
+    source: fetched.provider === 'skycrypt' ? 'auto-skycrypt' : 'auto-hypixel',
+  });
+
+  // Coin eligibility (skipped when force)
   let store = await loadStore(env);
-  const now = Date.now();
-  const lastManualAt =
-    findLastManualAt(store.entries) ??
-    (stateWrap.data.lastManualAt ? Date.parse(stateWrap.data.lastManualAt) : null);
-  const lastAutoAt =
-    findLastAutoAt(store.entries) ??
-    (stateWrap.data.lastAutoAt ? Date.parse(stateWrap.data.lastAutoAt) : null);
-  const suppressAutoUntil = stateWrap.data.suppressAutoUntil
-    ? Date.parse(stateWrap.data.suppressAutoUntil)
-    : null;
+  if (!force) {
+    const now = Date.now();
+    const lastManualAt =
+      findLastManualAt(store.entries) ??
+      (stateWrap.data.lastManualAt ? Date.parse(stateWrap.data.lastManualAt) : null);
+    const lastAutoAt =
+      findLastAutoAt(store.entries) ??
+      (stateWrap.data.lastAutoAt ? Date.parse(stateWrap.data.lastAutoAt) : null);
+    const suppressAutoUntil = stateWrap.data.suppressAutoUntil
+      ? Date.parse(stateWrap.data.suppressAutoUntil)
+      : null;
 
-  const decision = evaluateAutoEligibility({
-    now,
-    enabled: cfg.enabled,
-    inactivityMs: cfg.inactivityHours * 3600000,
-    minIntervalMs: cfg.minIntervalHours * 3600000,
-    lastManualAt,
-    lastAutoAt,
-    suppressAutoUntil: Number.isFinite(suppressAutoUntil) ? suppressAutoUntil : null,
-  });
-
-  if (!decision.eligible) {
-    result.reason = decision.reason;
-    return result;
-  }
-
-  // Fetch coins
-  let fetched;
-  try {
-    fetched = await fetchLiquidCoins(env);
-  } catch (err) {
-    const message = err.message || 'fetch failed';
-    console.error('Auto-log fetch failed', err);
-    await stampAutomationError(env, message, {
-      skycrypt: err.details?.skycrypt,
-      hypixel: err.details?.hypixel,
-      code: err.code,
+    const decision = evaluateAutoEligibility({
+      now,
+      enabled: cfg.enabled,
+      inactivityMs: cfg.inactivityHours * 3600000,
+      minIntervalMs: cfg.minIntervalHours * 3600000,
+      lastManualAt,
+      lastAutoAt,
+      suppressAutoUntil: Number.isFinite(suppressAutoUntil) ? suppressAutoUntil : null,
     });
-    result.reason = 'fetch_failed';
-    result.error = message;
-    return result;
+
+    if (!decision.eligible) {
+      result.reason = decision.reason;
+      return result;
+    }
   }
 
-  // Re-check immediately before commit (manual may have won)
-  store = await loadStore(env);
-  stateWrap = await loadAutomationState(env);
-  const lastManualAt2 =
-    findLastManualAt(store.entries) ??
-    (stateWrap.data.lastManualAt ? Date.parse(stateWrap.data.lastManualAt) : null);
-  const lastAutoAt2 =
-    findLastAutoAt(store.entries) ??
-    (stateWrap.data.lastAutoAt ? Date.parse(stateWrap.data.lastAutoAt) : null);
-  const suppress2 = stateWrap.data.suppressAutoUntil
-    ? Date.parse(stateWrap.data.suppressAutoUntil)
-    : null;
-  const decision2 = evaluateAutoEligibility({
-    now: Date.now(),
-    enabled: cfg.enabled,
-    inactivityMs: cfg.inactivityHours * 3600000,
-    minIntervalMs: cfg.minIntervalHours * 3600000,
-    lastManualAt: lastManualAt2,
-    lastAutoAt: lastAutoAt2,
-    suppressAutoUntil: Number.isFinite(suppress2) ? suppress2 : null,
-  });
-  if (!decision2.eligible) {
-    result.reason = `aborted_${decision2.reason}`;
-    return result;
+  // Re-check immediately before commit (manual may have won) — skipped when force
+  if (!force) {
+    store = await loadStore(env);
+    stateWrap = await loadAutomationState(env);
+    const lastManualAt2 =
+      findLastManualAt(store.entries) ??
+      (stateWrap.data.lastManualAt ? Date.parse(stateWrap.data.lastManualAt) : null);
+    const lastAutoAt2 =
+      findLastAutoAt(store.entries) ??
+      (stateWrap.data.lastAutoAt ? Date.parse(stateWrap.data.lastAutoAt) : null);
+    const suppress2 = stateWrap.data.suppressAutoUntil
+      ? Date.parse(stateWrap.data.suppressAutoUntil)
+      : null;
+    const decision2 = evaluateAutoEligibility({
+      now: Date.now(),
+      enabled: cfg.enabled,
+      inactivityMs: cfg.inactivityHours * 3600000,
+      minIntervalMs: cfg.minIntervalHours * 3600000,
+      lastManualAt: lastManualAt2,
+      lastAutoAt: lastAutoAt2,
+      suppressAutoUntil: Number.isFinite(suppress2) ? suppress2 : null,
+    });
+    if (!decision2.eligible) {
+      result.reason = `aborted_${decision2.reason}`;
+      return result;
+    }
   }
 
   const source =
@@ -419,30 +436,32 @@ export async function runScheduledAutoLog(env) {
 
   try {
     await mutateStore(env, async (s) => {
-      // Final in-mutator guard against duplicates from concurrent crons
-      const manual = findLastManualAt(s.entries);
-      const auto = findLastAutoAt(s.entries);
-      const guard = evaluateAutoEligibility({
-        now: Date.now(),
-        enabled: true,
-        inactivityMs: cfg.inactivityHours * 3600000,
-        minIntervalMs: cfg.minIntervalHours * 3600000,
-        lastManualAt: manual,
-        lastAutoAt: auto,
-        suppressAutoUntil: null,
-      });
-      if (!guard.eligible) {
-        throw Object.assign(new Error(`Auto-log aborted: ${guard.reason}`), {
-          status: 409,
-          code: 'AUTO_ABORT',
+      if (!force) {
+        // Final in-mutator guard against duplicates from concurrent crons
+        const manual = findLastManualAt(s.entries);
+        const auto = findLastAutoAt(s.entries);
+        const guard = evaluateAutoEligibility({
+          now: Date.now(),
+          enabled: true,
+          inactivityMs: cfg.inactivityHours * 3600000,
+          minIntervalMs: cfg.minIntervalHours * 3600000,
+          lastManualAt: manual,
+          lastAutoAt: auto,
+          suppressAutoUntil: null,
         });
+        if (!guard.eligible) {
+          throw Object.assign(new Error(`Auto-log aborted: ${guard.reason}`), {
+            status: 409,
+            code: 'AUTO_ABORT',
+          });
+        }
       }
 
       const entry = {
         id: newEntryId(),
         coins: fetched.coins,
         timestamp,
-        note: AUTO_NOTE,
+        note: force ? MANUAL_CHECK_NOTE : AUTO_NOTE,
         source,
         meta: {
           profile: fetched.profileCuteName || cfg.profile,
@@ -452,13 +471,17 @@ export async function runScheduledAutoLog(env) {
           purse: fetched.purse,
           bank: fetched.bank,
           personalBank: fetched.personalBank,
+          bankApiUnavailable: Boolean(fetched.bankApiUnavailable),
           lastUpdated: fetched.lastUpdated,
+          triggeredBy: force ? 'manual-check' : 'cron',
         },
       };
       return {
         entries: [...s.entries, entry],
         version: s.version,
-        message: `Auto balance: ${compactCoins(fetched.coins)} (${source})`,
+        message: force
+          ? `Manual auto check: ${compactCoins(fetched.coins)} (${source})`
+          : `Auto balance: ${compactCoins(fetched.coins)} (${source})`,
       };
     });
   } catch (err) {
@@ -488,13 +511,16 @@ export async function runScheduledAutoLog(env) {
         bank: fetched.bank,
         personalBank: fetched.personalBank,
         fetchedAt: fetched.fetchedAt,
+        triggeredBy: force ? 'manual-check' : 'cron',
       };
       try {
         await saveAutomationState(
           env,
           fresh.data,
           fresh.sha,
-          `Automation: recorded auto balance ${compactCoins(fetched.coins)}`
+          force
+            ? `Automation: manual check ${compactCoins(fetched.coins)}`
+            : `Automation: recorded auto balance ${compactCoins(fetched.coins)}`
         );
         break;
       } catch (err) {

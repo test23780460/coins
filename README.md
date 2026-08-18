@@ -32,6 +32,7 @@ Personal Hypixel SkyBlock coin balance tracker. Manually log your total coins ov
 - CSV + JSON export, JSON import with server-side backup
 - Optional notes on balance changes
 - **Automatic backup logging** after 24h without a manual entry (Cloudflare Cron)
+- **Profile Progress** (secondary): skill XP + estimated net worth snapshots alongside auto fetches
 - America/New_York display timezone
 - Mobile-friendly dark UI
 
@@ -200,6 +201,21 @@ Dashboard shows a compact **Automatic Logging** status panel after login.
 
 ---
 
+## Profile Progress (secondary analytics)
+
+Separate from coin history. When Hypixel/SkyCrypt profile data is fetched (hourly cron or Run Auto Check), the Worker also saves a **profile snapshot** under `data/profile/` in the private data repo.
+
+| Metric | Source |
+| --- | --- |
+| Skill XP | Hypixel `player_data.experience.SKILL_*` (same profiles response as coins) |
+| Estimated net worth | SkyCrypt only (when `SKYCRYPT_API_TOKEN` is set and that path succeeds) |
+
+- Does **not** affect coin balance, charts, goals, or the 24h inactivity timer
+- Missing skills or net worth are marked unavailable (never invents zeros for deltas)
+- Duplicate identical snapshots within ~55 minutes are skipped
+
+---
+
 ## GitHub Pages
 
 Workflow: `.github/workflows/deploy.yml`
@@ -222,6 +238,10 @@ Workflow: `.github/workflows/deploy.yml`
 | DELETE | `/api/entries/:id` | Yes |
 | POST | `/api/import` | Yes |
 | GET | `/api/health` | No |
+| GET | `/api/automation/status` | Yes |
+| POST | `/api/automation/run` | Yes |
+| GET | `/api/profile/progress` | Yes |
+| GET | `/api/profile/snapshots` | Yes |
 
 ---
 

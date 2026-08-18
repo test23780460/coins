@@ -557,6 +557,112 @@ table.history tr:hover td {
   font-size: 0.85rem;
 }
 
+.profile-progress-panel {
+  border-color: rgba(126, 182, 255, 0.18);
+}
+
+.profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: 0 0 14px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.profile-meta strong {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.profile-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.profile-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 14px 12px;
+}
+
+.profile-value {
+  font-family: var(--mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin-top: 6px;
+  letter-spacing: -0.02em;
+}
+
+.profile-delta {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.profile-sub {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.profile-details {
+  margin: 4px 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.profile-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.profile-skill-table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.profile-skill-table th,
+.profile-skill-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.profile-skill-table th.num,
+.profile-skill-table td.num {
+  text-align: right;
+  font-family: var(--mono);
+}
+
+.profile-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.chart-wrap-sm {
+  height: 200px;
+}
+
+@media (max-width: 900px) {
+  .profile-cards {
+    grid-template-columns: 1fr;
+  }
+  .profile-charts {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .auto-status-grid {
     grid-template-columns: 1fr 1fr;

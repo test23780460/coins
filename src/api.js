@@ -138,3 +138,11 @@ export async function fetchAutomationStatus() {
 export async function runAutomationCheck() {
   return api('/api/automation/run', { method: 'POST' });
 }
+
+export async function fetchProfileProgress() {
+  return api('/api/profile/progress');
+}
+
+export async function fetchProfileSnapshots() {
+  return api('/api/profile/snapshots');
+}

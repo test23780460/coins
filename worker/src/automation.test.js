@@ -236,7 +236,7 @@ describe('parseHypixelProfilesPayload', () => {
     ).toThrow(/not found/i);
   });
 
-  it('rejects missing bank', () => {
+  it('treats missing bank API as zero with flag', () => {
     const noBank = {
       success: true,
       profiles: [
@@ -246,13 +246,14 @@ describe('parseHypixelProfilesPayload', () => {
         },
       ],
     };
-    expect(() =>
-      parseHypixelProfilesPayload(noBank, {
-        player: 'justiwantdreams',
-        profile: 'Raspberry',
-        uuid,
-      })
-    ).toThrow(/Missing bank/i);
+    const r = parseHypixelProfilesPayload(noBank, {
+      player: 'justiwantdreams',
+      profile: 'Raspberry',
+      uuid,
+    });
+    expect(r.coins).toBe(10);
+    expect(r.bank).toBe(0);
+    expect(r.bankApiUnavailable).toBe(true);
   });
 
   it('rejects missing member', () => {

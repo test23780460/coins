@@ -10,6 +10,8 @@
  * Liquid coins = purse + bank + personalBank (SkyCrypt fields).
  */
 
+import { analyticsFromSkyCryptPayload } from './profile-analytics.js';
+
 export class SkyCryptError extends Error {
   /**
    * @param {string} message
@@ -151,6 +153,13 @@ export function parseSkyCryptStatsPayload(data, expected) {
     throw new SkyCryptError('Computed balance is invalid', 'INVALID_BALANCE');
   }
 
+  const fetchedAt = new Date().toISOString();
+  const profileAnalytics = analyticsFromSkyCryptPayload(data, {
+    player: expected.player,
+    profile: expected.profile,
+    fetchedAt,
+  });
+
   return {
     provider: 'skycrypt',
     player: expected.player,
@@ -160,8 +169,9 @@ export function parseSkyCryptStatsPayload(data, expected) {
     purse: Math.round(purse),
     bank: Math.round(bank),
     personalBank: Math.round(personalBank),
-    fetchedAt: new Date().toISOString(),
+    fetchedAt,
     lastUpdated: data.last_updated || data.lastUpdated || null,
+    profileAnalytics,
   };
 }
 

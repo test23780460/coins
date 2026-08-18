@@ -6,6 +6,7 @@ worker/node_modules/
 dist/
 worker/dist/
 .wrangler/
+.wrangler-dist/
 
 # Environment / secrets
 .env

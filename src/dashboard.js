@@ -8,6 +8,7 @@ import {
   logout as apiLogout,
   fetchAutomationStatus,
   runAutomationCheck,
+  fetchProfileProgress,
 } from './api.js';
 import {
   formatCompact,
@@ -18,8 +19,9 @@ import {
   changeTone,
 } from './formatting.js';
 import { formatNy, withChanges, computeStats } from './time.js';
-import { renderChart, destroyChart } from './chart.js';
+import { renderChart, destroyChart, renderProfileChart, destroyProfileCharts } from './chart.js';
 import { toCsv, toJsonBackup, validateImport, downloadBlob, sourceLabel } from './export.js';
+import { renderProfileProgressHtml } from './profile-progress.js';
 
 /**
  * @param {HTMLElement} root
@@ -29,6 +31,8 @@ export function mountDashboard(root, opts) {
   let entries = [];
   let version = 1;
   let range = 'ALL';
+  let profileRange = 'ALL';
+  let profileSnapshots = [];
   let busy = false;
 
   root.innerHTML = `
@@ -81,6 +85,38 @@ export function mountDashboard(root, opts) {
         <div class="chart-wrap"><canvas id="coin-chart" aria-label="Coin Progress chart"></canvas></div>
       </section>
 
+      <section class="panel profile-progress-panel" id="profile-progress">
+        <h2>Profile Progress</h2>
+        <p class="panel-desc">Secondary stats from profile snapshots — not your coin balance. Estimated net worth may move with item prices.</p>
+        <div id="profile-progress-body"></div>
+        <div class="profile-charts">
+          <div class="profile-chart-block">
+            <div class="chart-head">
+              <h3 style="margin:0;font-size:1rem">Estimated Net Worth</h3>
+              <div class="range-tabs" id="profile-nw-range" role="tablist">
+                <button type="button" data-range="7D">7D</button>
+                <button type="button" data-range="30D">30D</button>
+                <button type="button" data-range="90D">90D</button>
+                <button type="button" data-range="ALL" class="active">ALL</button>
+              </div>
+            </div>
+            <div class="chart-wrap chart-wrap-sm"><canvas id="nw-chart" aria-label="Estimated net worth chart"></canvas></div>
+          </div>
+          <div class="profile-chart-block">
+            <div class="chart-head">
+              <h3 style="margin:0;font-size:1rem">Total Skill XP</h3>
+              <div class="range-tabs" id="profile-xp-range" role="tablist">
+                <button type="button" data-range="7D">7D</button>
+                <button type="button" data-range="30D">30D</button>
+                <button type="button" data-range="90D">90D</button>
+                <button type="button" data-range="ALL" class="active">ALL</button>
+              </div>
+            </div>
+            <div class="chart-wrap chart-wrap-sm"><canvas id="xp-chart" aria-label="Total skill XP chart"></canvas></div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel">
         <h2>Balance History</h2>
         <p class="panel-desc">Newest entries first. Unlimited entries per day.</p>
@@ -100,6 +136,11 @@ export function mountDashboard(root, opts) {
     save: root.querySelector('#btn-save'),
     chart: root.querySelector('#coin-chart'),
     rangeTabs: root.querySelector('#range-tabs'),
+    profileBody: root.querySelector('#profile-progress-body'),
+    nwChart: root.querySelector('#nw-chart'),
+    xpChart: root.querySelector('#xp-chart'),
+    nwRange: root.querySelector('#profile-nw-range'),
+    xpRange: root.querySelector('#profile-xp-range'),
     exportBtn: root.querySelector('#btn-export'),
     exportPanel: root.querySelector('#export-panel'),
     logout: root.querySelector('#btn-logout'),
@@ -267,6 +308,21 @@ export function mountDashboard(root, opts) {
     renderHistory();
     refreshChart();
     refreshAutoStatus();
+    refreshProfileProgress();
+  }
+
+  async function refreshProfileProgress() {
+    if (!els.profileBody) return;
+    try {
+      const progress = await fetchProfileProgress();
+      profileSnapshots = progress.snapshots || [];
+      els.profileBody.innerHTML = renderProfileProgressHtml(progress);
+      renderProfileChart('netWorth', els.nwChart, profileSnapshots, profileRange);
+      renderProfileChart('skillXp', els.xpChart, profileSnapshots, profileRange);
+    } catch (err) {
+      console.error(err);
+      els.profileBody.innerHTML = `<p class="panel-desc tone-neutral">Profile progress unavailable right now.</p>`;
+    }
   }
 
   async function refreshAutoStatus() {
@@ -293,17 +349,23 @@ export function mountDashboard(root, opts) {
       try {
         const result = await runAutomationCheck();
         if (!result.ok || !result.probe?.ok) {
-          toast(result.probe?.error || result.error || 'Auto check failed', 'error');
+          toast(friendlyProbeError(result.probe?.error || result.error), 'error');
         } else {
           const coinsText = formatCompact(result.probe.coins);
           const run = result.run || {};
+          const bankNote = result.probe.bankApiUnavailable
+            ? ' (purse only — enable Bank API in SkyBlock for full liquid coins)'
+            : '';
           if (run.created) {
-            toast(`Auto entry saved · ${coinsText} coins`, 'success');
+            toast(`Entry saved · ${coinsText} coins${bankNote}`, 'success');
             await load();
           } else {
-            const reason = friendlyAutoReason(run.reason);
-            toast(`Live balance ${coinsText} · ${reason}`, 'info');
+            toast(
+              friendlyProbeError(run.error || run.reason || 'Could not save entry'),
+              'error'
+            );
             await refreshAutoStatus();
+            await refreshProfileProgress();
           }
         }
       } catch (err) {
@@ -332,6 +394,17 @@ export function mountDashboard(root, opts) {
       default:
         return reason ? String(reason).replace(/_/g, ' ') : 'no entry created';
     }
+  }
+
+  function friendlyProbeError(message) {
+    const raw = String(message || 'Auto check failed');
+    if (/Invalid API key|API key rejected/i.test(raw)) {
+      return 'Hypixel API key is invalid — set a fresh HYPIXEL_API_KEY with wrangler secret put';
+    }
+    if (/no SKYCRYPT_API_TOKEN/i.test(raw) && /Hypixel/i.test(raw)) {
+      return raw;
+    }
+    return raw;
   }
 
   function renderAutoStatusHtml(status) {
@@ -576,6 +649,24 @@ export function mountDashboard(root, opts) {
     refreshChart();
   });
 
+  function bindProfileRange(container) {
+    if (!container) return;
+    container.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-range]');
+      if (!btn) return;
+      profileRange = btn.dataset.range;
+      for (const tabs of [els.nwRange, els.xpRange]) {
+        tabs?.querySelectorAll('button').forEach((b) => {
+          b.classList.toggle('active', b.dataset.range === profileRange);
+        });
+      }
+      renderProfileChart('netWorth', els.nwChart, profileSnapshots, profileRange);
+      renderProfileChart('skillXp', els.xpChart, profileSnapshots, profileRange);
+    });
+  }
+  bindProfileRange(els.nwRange);
+  bindProfileRange(els.xpRange);
+
   els.history.addEventListener('click', (e) => {
     const editId = e.target.closest('[data-edit]')?.dataset?.edit;
     const delId = e.target.closest('[data-delete]')?.dataset?.delete;
@@ -681,6 +772,7 @@ export function mountDashboard(root, opts) {
     },
     destroy() {
       destroyChart();
+      destroyProfileCharts();
     },
   };
 }

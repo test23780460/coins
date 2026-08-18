@@ -22,6 +22,8 @@ import {
   SOURCE_MANUAL,
 } from './automation.js';
 import { getAutoConfig, fetchLiquidCoins } from './coins-provider.js';
+import { loadProfileStore } from './profile-store.js';
+import { buildProfileProgressSummary } from './profile-analytics.js';
 
 /** @type {Map<string, { count: number, reset: number }>} */
 const loginAttempts = new Map();
@@ -119,6 +121,16 @@ export default {
       if (path === '/api/automation/run' && request.method === 'POST') {
         await requireAuth(request, env);
         return withCors(await handleAutomationRun(env), cors);
+      }
+
+      if (path === '/api/profile/snapshots' && request.method === 'GET') {
+        await requireAuth(request, env);
+        return withCors(await handleProfileSnapshots(env), cors);
+      }
+
+      if (path === '/api/profile/progress' && request.method === 'GET') {
+        await requireAuth(request, env);
+        return withCors(await handleProfileProgress(env), cors);
       }
 
       return json({ error: 'Not found' }, 404, cors);
@@ -344,6 +356,29 @@ async function handleAutomationStatus(env) {
   return json(buildAutomationStatus(env, store.entries, data));
 }
 
+async function handleProfileSnapshots(env) {
+  const store = await loadProfileStore(env);
+  const entries = [...store.entries].sort(
+    (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)
+  );
+  return json({
+    version: store.version,
+    entries,
+  });
+}
+
+async function handleProfileProgress(env) {
+  const store = await loadProfileStore(env);
+  const summary = buildProfileProgressSummary(store.entries);
+  return json({
+    ok: true,
+    ...summary,
+    snapshots: store.entries
+      .slice()
+      .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)),
+  });
+}
+
 async function handleAutomationProbe(env) {
   // Read-only: fetch current liquid coins without writing history.
   try {
@@ -357,6 +392,7 @@ async function handleAutomationProbe(env) {
       purse: fetched.purse,
       bank: fetched.bank,
       personalBank: fetched.personalBank,
+      bankApiUnavailable: Boolean(fetched.bankApiUnavailable),
       fetchedAt: fetched.fetchedAt,
     });
   } catch (err) {
@@ -373,24 +409,13 @@ async function handleAutomationProbe(env) {
 }
 
 /**
- * Manual trigger of the same auto-check the hourly cron uses.
- * Always probes live coins first so the button can verify Hypixel even when not eligible to write.
+ * Manual Run Auto Check — always probes and always saves an entry (bypasses 24h gate).
+ * Cron continues to use runScheduledAutoLog() without force.
  */
 async function handleAutomationRun(env) {
-  let probe = null;
+  let fetched;
   try {
-    const fetched = await fetchLiquidCoins(env);
-    probe = {
-      ok: true,
-      provider: fetched.provider,
-      player: fetched.player,
-      profile: fetched.profileCuteName || fetched.profile,
-      coins: fetched.coins,
-      purse: fetched.purse,
-      bank: fetched.bank,
-      personalBank: fetched.personalBank,
-      fetchedAt: fetched.fetchedAt,
-    };
+    fetched = await fetchLiquidCoins(env);
   } catch (err) {
     return json(
       {
@@ -407,9 +432,22 @@ async function handleAutomationRun(env) {
     );
   }
 
-  const run = await runScheduledAutoLog(env);
-  return json({
+  const probe = {
     ok: true,
+    provider: fetched.provider,
+    player: fetched.player,
+    profile: fetched.profileCuteName || fetched.profile,
+    coins: fetched.coins,
+    purse: fetched.purse,
+    bank: fetched.bank,
+    personalBank: fetched.personalBank,
+    bankApiUnavailable: Boolean(fetched.bankApiUnavailable),
+    fetchedAt: fetched.fetchedAt,
+  };
+
+  const run = await runScheduledAutoLog(env, { force: true, fetched });
+  return json({
+    ok: Boolean(run.created),
     probe,
     run,
   });
