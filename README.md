@@ -33,6 +33,7 @@ Personal Hypixel SkyBlock coin balance tracker. Manually log your total coins ov
 - Optional notes on balance changes
 - **Automatic backup logging** after 24h without a manual entry (Cloudflare Cron)
 - **Profile Progress** (secondary): skill XP + estimated net worth snapshots alongside auto fetches
+- **Homepage API Connection** card: paste/update Hypixel API key (encrypted in Cloudflare KV)
 - America/New_York display timezone
 - Mobile-friendly dark UI
 
@@ -242,6 +243,8 @@ Workflow: `.github/workflows/deploy.yml`
 | POST | `/api/automation/run` | Yes |
 | GET | `/api/profile/progress` | Yes |
 | GET | `/api/profile/snapshots` | Yes |
+| GET | `/api/settings/api-key` | Yes |
+| PUT | `/api/settings/api-key` | Yes |
 
 ---
 

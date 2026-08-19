@@ -7,6 +7,7 @@ import { loadStore, mutateStore } from './store.js';
 import { newEntryId, compactCoins } from './validation.js';
 import { fetchLiquidCoins, getAutoConfig, ProviderError } from './coins-provider.js';
 import { maybeSaveProfileSnapshot } from './profile-snapshots.js';
+import { getApiKeyStatus, getExternalApiKey } from './api-key-store.js';
 
 export const AUTOMATION_STATE_PATH = 'data/automation-state.json';
 export const SOURCE_MANUAL = 'manual';
@@ -208,7 +209,7 @@ function isoOrNull(v) {
  * @param {Array} entries
  * @param {object} state
  */
-export function buildAutomationStatus(env, entries, state) {
+export async function buildAutomationStatus(env, entries, state) {
   const cfg = getAutoConfig(env);
   const now = Date.now();
   const lastManualAt = findLastManualAt(entries) ?? (state.lastManualAt ? Date.parse(state.lastManualAt) : null);
@@ -227,14 +228,18 @@ export function buildAutomationStatus(env, entries, state) {
     suppressAutoUntil: Number.isFinite(suppressAutoUntil) ? suppressAutoUntil : null,
   });
 
+  const apiConnection = await getApiKeyStatus(env);
+  const hasKey = Boolean(await getExternalApiKey(env));
+
   return {
     enabled: cfg.enabled,
     player: cfg.player,
     profile: cfg.profile,
     inactivityHours: cfg.inactivityHours,
     minIntervalHours: cfg.minIntervalHours,
-    hasHypixelKey: Boolean(env.HYPIXEL_API_KEY),
+    hasHypixelKey: hasKey,
     hasSkyCryptToken: Boolean(env.SKYCRYPT_API_TOKEN),
+    apiConnection,
     lastManualAt: lastManualAt != null ? new Date(lastManualAt).toISOString() : null,
     lastAutoAt: lastAutoAt != null ? new Date(lastAutoAt).toISOString() : null,
     lastAttemptAt: state.lastAttemptAt,

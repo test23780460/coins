@@ -557,6 +557,118 @@ table.history tr:hover td {
   font-size: 0.85rem;
 }
 
+.api-connection-panel {
+  padding: 14px 16px;
+}
+
+.api-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.api-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.api-badge--ok {
+  color: var(--positive);
+  background: rgba(62, 207, 142, 0.1);
+  border-color: rgba(62, 207, 142, 0.35);
+}
+
+.api-badge--warn {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.api-badge--bad {
+  color: var(--negative);
+  background: rgba(240, 113, 120, 0.1);
+  border-color: rgba(240, 113, 120, 0.4);
+}
+
+.api-card--attention {
+  border-color: rgba(240, 113, 120, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(240, 113, 120, 0.12);
+}
+
+.api-alert {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+  color: var(--negative);
+  line-height: 1.4;
+}
+
+.api-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.api-masked {
+  font-family: var(--mono);
+  margin-top: 4px;
+  letter-spacing: 0.04em;
+}
+
+.api-updated {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.api-hint {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.api-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.api-input-wrap {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.api-toggle {
+  padding: 0 12px;
+  min-width: 64px;
+}
+
+.api-msg {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+}
+
+.api-msg--error {
+  color: var(--negative);
+}
+
+@media (max-width: 640px) {
+  .api-card-meta,
+  .api-form,
+  .api-input-wrap {
+    grid-template-columns: 1fr;
+  }
+}
+
 .profile-progress-panel {
   border-color: rgba(126, 182, 255, 0.18);
 }

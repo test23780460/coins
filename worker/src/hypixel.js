@@ -6,6 +6,11 @@
  */
 
 import { analyticsFromHypixelMember } from './profile-analytics.js';
+import {
+  getExternalApiKey,
+  markApiKeyInvalid,
+  markApiKeySuccess,
+} from './api-key-store.js';
 
 export class HypixelError extends Error {
   /**
@@ -28,15 +33,10 @@ export async function fetchHypixelLiquidCoins(env, opts) {
   if (!player || !profile) {
     throw new HypixelError('Player and profile are required', 'CONFIG');
   }
-  if (!env.HYPIXEL_API_KEY) {
-    throw new HypixelError('HYPIXEL_API_KEY is not configured', 'CONFIG');
-  }
 
-  const apiKey = String(env.HYPIXEL_API_KEY)
-    .trim()
-    .replace(/^["']|["']$/g, '');
+  const apiKey = await getExternalApiKey(env);
   if (!apiKey) {
-    throw new HypixelError('HYPIXEL_API_KEY is empty', 'CONFIG');
+    throw new HypixelError('Hypixel API key is not configured', 'CONFIG');
   }
 
   const uuid = (
@@ -82,6 +82,7 @@ export async function fetchHypixelLiquidCoins(env, opts) {
 
   if (res.status === 403 || res.status === 401) {
     const cause = data?.cause || data?.error || `HTTP ${res.status}`;
+    await markApiKeyInvalid(env, `Hypixel API key rejected (${cause})`);
     throw new HypixelError(`Hypixel API key rejected (${cause})`, 'UNAUTHORIZED');
   }
   if (res.status === 429) {
@@ -98,7 +99,9 @@ export async function fetchHypixelLiquidCoins(env, opts) {
     throw new HypixelError(data?.cause || 'Hypixel request unsuccessful', 'UPSTREAM');
   }
 
-  return parseHypixelProfilesPayload(data, { player, profile, uuid });
+  const parsed = parseHypixelProfilesPayload(data, { player, profile, uuid });
+  await markApiKeySuccess(env);
+  return parsed;
 }
 
 /**

@@ -146,3 +146,14 @@ export async function fetchProfileProgress() {
 export async function fetchProfileSnapshots() {
   return api('/api/profile/snapshots');
 }
+
+export async function fetchApiKeyStatus() {
+  return api('/api/settings/api-key');
+}
+
+export async function updateApiKey(apiKey) {
+  return api('/api/settings/api-key', {
+    method: 'PUT',
+    json: { apiKey },
+  });
+}

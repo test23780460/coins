@@ -7,6 +7,13 @@
   "triggers": {
     "crons": ["0 * * * *"]
   },
+  "kv_namespaces": [
+    {
+      "binding": "PRIVATE_CONFIG",
+      "id": "ccc6c142059f48d5843e23366a956701",
+      "preview_id": "cf7107bdf3e749f7880fb7682ae33cef"
+    }
+  ],
   "vars": {
     "GITHUB_OWNER": "test23780460",
     "GITHUB_DATA_REPO": "skyblock-coin-data",

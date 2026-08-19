@@ -9,6 +9,8 @@ import {
   fetchAutomationStatus,
   runAutomationCheck,
   fetchProfileProgress,
+  fetchApiKeyStatus,
+  updateApiKey,
 } from './api.js';
 import {
   formatCompact,
@@ -22,6 +24,7 @@ import { formatNy, withChanges, computeStats } from './time.js';
 import { renderChart, destroyChart, renderProfileChart, destroyProfileCharts } from './chart.js';
 import { toCsv, toJsonBackup, validateImport, downloadBlob, sourceLabel } from './export.js';
 import { renderProfileProgressHtml } from './profile-progress.js';
+import { renderApiConnectionHtml } from './api-connection.js';
 
 /**
  * @param {HTMLElement} root
@@ -55,6 +58,8 @@ export function mountDashboard(root, opts) {
     </header>
     <main class="main">
       <section class="stat-grid" id="stats"></section>
+
+      <section class="panel api-connection-panel" id="api-connection"></section>
 
       <section class="panel">
         <h2>Current Coin Balance</h2>
@@ -128,6 +133,7 @@ export function mountDashboard(root, opts) {
 
   const els = {
     stats: root.querySelector('#stats'),
+    apiConnection: root.querySelector('#api-connection'),
     history: root.querySelector('#history'),
     input: root.querySelector('#balance-input'),
     note: root.querySelector('#note-input'),
@@ -307,8 +313,73 @@ export function mountDashboard(root, opts) {
     renderStats();
     renderHistory();
     refreshChart();
+    refreshApiConnection();
     refreshAutoStatus();
     refreshProfileProgress();
+  }
+
+  async function refreshApiConnection() {
+    if (!els.apiConnection) return;
+    try {
+      const status = await fetchApiKeyStatus();
+      els.apiConnection.innerHTML = renderApiConnectionHtml(status);
+      bindApiConnectionControls();
+    } catch (err) {
+      console.error(err);
+      els.apiConnection.innerHTML = `<div class="api-card"><p class="panel-desc">API connection status unavailable.</p></div>`;
+    }
+  }
+
+  function bindApiConnectionControls() {
+    const input = els.apiConnection.querySelector('#api-key-input');
+    const toggle = els.apiConnection.querySelector('#api-key-toggle');
+    const btn = els.apiConnection.querySelector('#btn-update-api-key');
+    const msg = els.apiConnection.querySelector('#api-msg');
+    if (!input || !btn || btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+
+    toggle?.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      toggle.textContent = show ? 'Hide' : 'Show';
+    });
+
+    btn.addEventListener('click', async () => {
+      const apiKey = input.value.trim();
+      if (!apiKey) {
+        toast('Paste a new API key first', 'error');
+        return;
+      }
+      btn.disabled = true;
+      const prev = btn.textContent;
+      btn.textContent = 'Updating…';
+      if (msg) {
+        msg.hidden = true;
+        msg.textContent = '';
+      }
+      try {
+        const result = await updateApiKey(apiKey);
+        input.value = '';
+        input.type = 'password';
+        if (toggle) toggle.textContent = 'Show';
+        toast(result.message || 'API key updated and connected.', 'success');
+        await refreshApiConnection();
+      } catch (err) {
+        const detail = err.details?.detail;
+        const text =
+          err.message ||
+          'That API key could not be validated. Your existing key was left unchanged.';
+        if (msg) {
+          msg.hidden = false;
+          msg.className = 'api-msg api-msg--error';
+          msg.textContent = detail ? `${text} (${detail})` : text;
+        }
+        toast(text, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    });
   }
 
   async function refreshProfileProgress() {

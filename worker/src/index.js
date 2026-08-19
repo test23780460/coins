@@ -24,6 +24,11 @@ import {
 import { getAutoConfig, fetchLiquidCoins } from './coins-provider.js';
 import { loadProfileStore } from './profile-store.js';
 import { buildProfileProgressSummary } from './profile-analytics.js';
+import {
+  getApiKeyStatus,
+  getExternalApiKey,
+  updateExternalApiKey,
+} from './api-key-store.js';
 
 /** @type {Map<string, { count: number, reset: number }>} */
 const loginAttempts = new Map();
@@ -53,6 +58,7 @@ export default {
 
       if (path === '/api/health' && request.method === 'GET') {
         const cfg = getAutoConfig(env);
+        const hasKey = Boolean(await getExternalApiKey(env));
         return json(
           {
             ok: true,
@@ -61,7 +67,7 @@ export default {
               enabled: cfg.enabled,
               player: cfg.player,
               profile: cfg.profile,
-              hasHypixelKey: Boolean(env.HYPIXEL_API_KEY),
+              hasHypixelKey: hasKey,
               hasSkyCryptToken: Boolean(env.SKYCRYPT_API_TOKEN),
             },
           },
@@ -131,6 +137,16 @@ export default {
       if (path === '/api/profile/progress' && request.method === 'GET') {
         await requireAuth(request, env);
         return withCors(await handleProfileProgress(env), cors);
+      }
+
+      if (path === '/api/settings/api-key' && request.method === 'GET') {
+        await requireAuth(request, env);
+        return withCors(await handleApiKeyStatus(env), cors);
+      }
+
+      if (path === '/api/settings/api-key' && request.method === 'PUT') {
+        await requireAuth(request, env);
+        return withCors(await handleApiKeyUpdate(request, env), cors);
       }
 
       return json({ error: 'Not found' }, 404, cors);
@@ -353,7 +369,58 @@ async function handleImport(request, env) {
 async function handleAutomationStatus(env) {
   const store = await loadStore(env);
   const { data } = await loadAutomationState(env);
-  return json(buildAutomationStatus(env, store.entries, data));
+  return json(await buildAutomationStatus(env, store.entries, data));
+}
+
+async function handleApiKeyStatus(env) {
+  const status = await getApiKeyStatus(env);
+  // Never include raw key fields
+  return json({
+    ok: true,
+    configured: status.configured,
+    status: status.status,
+    lastFour: status.lastFour,
+    updatedAt: status.updatedAt,
+    lastValidationAt: status.lastValidationAt,
+    lastSuccessfulRequest: status.lastSuccessfulRequest,
+    lastError: status.lastError,
+    lastErrorAt: status.lastErrorAt,
+    mayNeedRotation: status.mayNeedRotation,
+    ageDays: status.ageDays,
+    source: status.source,
+  });
+}
+
+async function handleApiKeyUpdate(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'Invalid JSON body' }, 400);
+  }
+  if (body && !('apiKey' in body) && typeof body.key === 'string') {
+    body.apiKey = body.key;
+  }
+  const result = await updateExternalApiKey(env, body?.apiKey);
+  if (!result.ok) {
+    return json(
+      {
+        ok: false,
+        error: result.error,
+        detail: result.detail,
+        code: result.code,
+        preserved: result.preserved,
+      },
+      result.code === 'INVALID_KEY' || result.code === 'VALIDATION' ? 400 : 500
+    );
+  }
+  return json({
+    ok: true,
+    message: result.message,
+    status: result.status,
+    lastFour: result.lastFour,
+    updatedAt: result.updatedAt,
+  });
 }
 
 async function handleProfileSnapshots(env) {
