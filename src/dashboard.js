@@ -45,6 +45,18 @@ export function mountDashboard(root, opts) {
         <small>Personal Tracker</small>
       </div>
       <div class="header-actions">
+        <div class="menu" id="api-menu">
+          <button type="button" class="btn btn-ghost" id="btn-api-menu" aria-haspopup="true" aria-expanded="false">
+            API Key
+            <span class="api-header-badge api-header-badge--warn" id="api-status-badge">…</span>
+          </button>
+          <div class="menu-panel api-menu-panel" id="api-menu-panel" role="menu">
+            <div class="api-menu-body">
+              <div class="api-menu-title">Hypixel API Key</div>
+              <p class="api-menu-alert">Loading connection status…</p>
+            </div>
+          </div>
+        </div>
         <div class="menu" id="export-menu">
           <button type="button" class="btn btn-ghost" id="btn-export" aria-haspopup="true" aria-expanded="false">Export</button>
           <div class="menu-panel" id="export-panel" role="menu">
@@ -58,16 +70,6 @@ export function mountDashboard(root, opts) {
     </header>
     <main class="main">
       <section class="stat-grid" id="stats"></section>
-
-      <section class="panel api-connection-panel" id="api-connection">
-        <div class="api-card">
-          <div class="api-card-head">
-            <h2 style="margin:0">API Connection</h2>
-            <span class="api-badge api-badge--warn">Loading…</span>
-          </div>
-          <p class="panel-desc" style="margin:0">Paste your Hypixel API key here to keep automatic tracking working.</p>
-        </div>
-      </section>
 
       <section class="panel">
         <h2>Current Coin Balance</h2>
@@ -141,7 +143,7 @@ export function mountDashboard(root, opts) {
 
   const els = {
     stats: root.querySelector('#stats'),
-    apiConnection: root.querySelector('#api-connection'),
+    apiMenu: root.querySelector('#api-menu'),
     history: root.querySelector('#history'),
     input: root.querySelector('#balance-input'),
     note: root.querySelector('#note-input'),
@@ -327,49 +329,63 @@ export function mountDashboard(root, opts) {
   }
 
   async function refreshApiConnection() {
-    if (!els.apiConnection) return;
+    if (!els.apiMenu) return;
     try {
       const status = await fetchApiKeyStatus();
-      els.apiConnection.innerHTML = renderApiConnectionHtml(status);
+      els.apiMenu.innerHTML = renderApiConnectionHtml(status);
       bindApiConnectionControls();
     } catch (err) {
       console.error(err);
-      // Still show the form so the user can paste a key even if status fetch fails
-      els.apiConnection.innerHTML = renderApiConnectionHtml({
+      els.apiMenu.innerHTML = renderApiConnectionHtml({
         configured: false,
         status: 'needs_key',
         lastFour: null,
         updatedAt: null,
       });
       bindApiConnectionControls();
-      const msg = els.apiConnection.querySelector('#api-msg');
+      const msg = els.apiMenu.querySelector('#api-msg');
       if (msg) {
         msg.hidden = false;
         msg.className = 'api-msg api-msg--error';
         msg.textContent =
           err.code === 'UNAUTHORIZED'
             ? 'Session expired — log in again.'
-            : 'Could not load key status — you can still paste a new key below.';
+            : 'Could not load key status — you can still paste a new key.';
       }
     }
   }
 
   function bindApiConnectionControls() {
-    const input = els.apiConnection.querySelector('#api-key-input');
-    const toggle = els.apiConnection.querySelector('#api-key-toggle');
-    const btn = els.apiConnection.querySelector('#btn-update-api-key');
-    const msg = els.apiConnection.querySelector('#api-msg');
-    if (!input || !btn || btn.dataset.bound === '1') return;
-    btn.dataset.bound = '1';
+    const menuBtn = els.apiMenu.querySelector('#btn-api-menu');
+    const panel = els.apiMenu.querySelector('#api-menu-panel');
+    const input = els.apiMenu.querySelector('#api-key-input');
+    const toggle = els.apiMenu.querySelector('#api-key-toggle');
+    const btn = els.apiMenu.querySelector('#btn-update-api-key');
+    const msg = els.apiMenu.querySelector('#api-msg');
+    if (!menuBtn || !panel || menuBtn.dataset.bound === '1') return;
+    menuBtn.dataset.bound = '1';
 
-    toggle?.addEventListener('click', () => {
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = panel.classList.toggle('open');
+      menuBtn.setAttribute('aria-expanded', String(open));
+      // Close export if open
+      els.exportPanel?.classList.remove('open');
+      els.exportBtn?.setAttribute('aria-expanded', 'false');
+      if (open) input?.focus();
+    });
+
+    toggle?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!input) return;
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
       toggle.textContent = show ? 'Hide' : 'Show';
     });
 
-    btn.addEventListener('click', async () => {
-      const apiKey = input.value.trim();
+    btn?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const apiKey = input?.value.trim() || '';
       if (!apiKey) {
         toast('Paste a new API key first', 'error');
         return;
@@ -383,11 +399,18 @@ export function mountDashboard(root, opts) {
       }
       try {
         const result = await updateApiKey(apiKey);
-        input.value = '';
-        input.type = 'password';
+        if (input) {
+          input.value = '';
+          input.type = 'password';
+        }
         if (toggle) toggle.textContent = 'Show';
         toast(result.message || 'API key updated and connected.', 'success');
         await refreshApiConnection();
+        // Re-open so user sees Connected status
+        const newPanel = els.apiMenu.querySelector('#api-menu-panel');
+        const newBtn = els.apiMenu.querySelector('#btn-api-menu');
+        newPanel?.classList.add('open');
+        newBtn?.setAttribute('aria-expanded', 'true');
       } catch (err) {
         const detail = err.details?.detail;
         const text =
@@ -404,6 +427,9 @@ export function mountDashboard(root, opts) {
         btn.textContent = prev;
       }
     });
+
+    // Keep clicks inside panel from closing via document handler awkwardly
+    panel.addEventListener('click', (e) => e.stopPropagation());
   }
 
   async function refreshProfileProgress() {
@@ -783,6 +809,12 @@ export function mountDashboard(root, opts) {
     if (!root.querySelector('#export-menu')?.contains(e.target)) {
       els.exportPanel.classList.remove('open');
       els.exportBtn.setAttribute('aria-expanded', 'false');
+    }
+    if (!root.querySelector('#api-menu')?.contains(e.target)) {
+      const apiPanel = els.apiMenu?.querySelector('#api-menu-panel');
+      const apiBtn = els.apiMenu?.querySelector('#btn-api-menu');
+      apiPanel?.classList.remove('open');
+      apiBtn?.setAttribute('aria-expanded', 'false');
     }
   });
 

@@ -1,5 +1,5 @@
 /**
- * Compact homepage API Connection card helpers.
+ * Header API Key controls (next to Export / Logout).
  */
 
 import { formatNy } from './time.js';
@@ -10,16 +10,17 @@ import { formatNy } from './time.js';
 export function renderApiConnectionHtml(status) {
   const s = status || {};
   const state = s.status || (s.configured ? 'connected' : 'needs_key');
-  const needsAttention = state === 'invalid' || state === 'needs_key';
 
-  let badge = 'Needs API Key';
-  let badgeClass = 'api-badge api-badge--warn';
+  let badge = 'Needs key';
+  let badgeClass = 'api-header-badge api-header-badge--warn';
+  let btnLabel = 'API Key';
   if (state === 'connected') {
     badge = 'Connected';
-    badgeClass = 'api-badge api-badge--ok';
+    badgeClass = 'api-header-badge api-header-badge--ok';
   } else if (state === 'invalid') {
-    badge = 'API Key Invalid';
-    badgeClass = 'api-badge api-badge--bad';
+    badge = 'Invalid';
+    badgeClass = 'api-header-badge api-header-badge--bad';
+    btnLabel = 'API Key ⚠';
   }
 
   const masked = s.lastFour
@@ -30,39 +31,38 @@ export function renderApiConnectionHtml(status) {
 
   const updated = s.updatedAt
     ? `${formatNy(s.updatedAt).dateShort} · ${formatNy(s.updatedAt).timeShort} ET`
-    : '—';
+    : 'Never via website';
 
   const ageNote =
     s.mayNeedRotation && state === 'connected'
-      ? `<div class="api-hint">Key updated ${Number(s.ageDays) || 6}+ days ago — you may need to replace it soon.</div>`
+      ? `<p class="api-menu-note">Updated ${Number(s.ageDays) || 6}+ days ago — you may need a new key soon.</p>`
       : '';
 
   const alert =
     state === 'invalid'
-      ? `<div class="api-alert">⚠ API key expired. Update it below to resume automatic tracking. Manual coin logging still works.</div>`
+      ? `<p class="api-menu-alert">API key expired. Paste a new one to resume automatic tracking.</p>`
       : state === 'needs_key'
-        ? `<div class="api-alert">Add a Hypixel API key to enable automatic SkyBlock tracking.</div>`
+        ? `<p class="api-menu-alert">Paste your Hypixel API key to enable automatic tracking.</p>`
         : '';
 
   return `
-    <div class="api-card ${needsAttention ? 'api-card--attention' : ''}">
-      <div class="api-card-head">
-        <h2 style="margin:0">API Connection</h2>
-        <span class="${badgeClass}" id="api-status-badge">${escapeHtml(badge)}</span>
-      </div>
-      ${alert}
-      <div class="api-card-meta">
-        <div>
-          <div class="stat-label">Current key</div>
-          <div class="api-masked" id="api-last-four">${masked}</div>
+    <button type="button" class="btn btn-ghost" id="btn-api-menu" aria-haspopup="true" aria-expanded="false">
+      ${escapeHtml(btnLabel)}
+      <span class="${badgeClass}" id="api-status-badge">${escapeHtml(badge)}</span>
+    </button>
+    <div class="menu-panel api-menu-panel" id="api-menu-panel" role="menu">
+      <div class="api-menu-body">
+        <div class="api-menu-title">Hypixel API Key</div>
+        ${alert}
+        <div class="api-menu-row">
+          <span class="stat-label">Current</span>
+          <span class="api-masked" id="api-last-four">${masked}</span>
         </div>
-        <div>
-          <div class="stat-label">Last updated</div>
-          <div class="api-updated" id="api-updated">${escapeHtml(updated)}</div>
+        <div class="api-menu-row">
+          <span class="stat-label">Updated</span>
+          <span class="api-updated" id="api-updated">${escapeHtml(updated)}</span>
         </div>
-      </div>
-      ${ageNote}
-      <div class="api-form">
+        ${ageNote}
         <div class="api-input-wrap">
           <input
             type="password"
@@ -75,9 +75,9 @@ export function renderApiConnectionHtml(status) {
           />
           <button type="button" class="btn btn-ghost api-toggle" id="api-key-toggle" aria-label="Show API key">Show</button>
         </div>
-        <button type="button" class="btn btn-primary" id="btn-update-api-key">Update API Key</button>
+        <button type="button" class="btn btn-primary api-update-btn" id="btn-update-api-key">Update API Key</button>
+        <p class="api-msg" id="api-msg" hidden></p>
       </div>
-      <p class="api-msg" id="api-msg" hidden></p>
     </div>
   `;
 }
