@@ -59,7 +59,15 @@ export function mountDashboard(root, opts) {
     <main class="main">
       <section class="stat-grid" id="stats"></section>
 
-      <section class="panel api-connection-panel" id="api-connection"></section>
+      <section class="panel api-connection-panel" id="api-connection">
+        <div class="api-card">
+          <div class="api-card-head">
+            <h2 style="margin:0">API Connection</h2>
+            <span class="api-badge api-badge--warn">Loading…</span>
+          </div>
+          <p class="panel-desc" style="margin:0">Paste your Hypixel API key here to keep automatic tracking working.</p>
+        </div>
+      </section>
 
       <section class="panel">
         <h2>Current Coin Balance</h2>
@@ -326,7 +334,23 @@ export function mountDashboard(root, opts) {
       bindApiConnectionControls();
     } catch (err) {
       console.error(err);
-      els.apiConnection.innerHTML = `<div class="api-card"><p class="panel-desc">API connection status unavailable.</p></div>`;
+      // Still show the form so the user can paste a key even if status fetch fails
+      els.apiConnection.innerHTML = renderApiConnectionHtml({
+        configured: false,
+        status: 'needs_key',
+        lastFour: null,
+        updatedAt: null,
+      });
+      bindApiConnectionControls();
+      const msg = els.apiConnection.querySelector('#api-msg');
+      if (msg) {
+        msg.hidden = false;
+        msg.className = 'api-msg api-msg--error';
+        msg.textContent =
+          err.code === 'UNAUTHORIZED'
+            ? 'Session expired — log in again.'
+            : 'Could not load key status — you can still paste a new key below.';
+      }
     }
   }
 
@@ -553,7 +577,12 @@ export function mountDashboard(root, opts) {
     const data = await fetchEntries();
     entries = data.entries || [];
     version = data.version ?? 1;
-    refreshAll();
+    renderStats();
+    renderHistory();
+    refreshChart();
+    await refreshApiConnection();
+    refreshAutoStatus();
+    refreshProfileProgress();
   }
 
   async function saveBalance() {
